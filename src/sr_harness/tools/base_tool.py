@@ -44,6 +44,8 @@ class BaseTool(ABC, FactoryMixin):
     and Google-style docstring.
     """
     metadata: ToolMetadata = None
+    configuration_model = None
+    configuration_defaults = {}
     MAX_FORMULA_LENGTH = 10000
     MAX_RESULT_STR_LENGTH = 64 * 1024
     FORMULA_DISPLAY_NUMBER_FORMAT = ".8g"
@@ -75,6 +77,20 @@ class BaseTool(ABC, FactoryMixin):
         if context is not None and not isinstance(context, AgentContext):
             raise TypeError("context must be an AgentContext or None")
         self.context = context if context is not None else AgentContext()
+
+    def get_runtime_configuration(self) -> Any:
+        """Capture validated tool settings for the current call, independent of model parameters."""
+        if self.configuration_model is None:
+            return None
+        from ..core.tool_config import resolve_tool_configuration
+
+        records = getattr(self.context.args, "tool_configurations", {})
+        role = getattr(self, "agent_role", "search")
+        record = resolve_tool_configuration(
+            self.metadata.name, role, self.configuration_defaults,
+            getattr(self.context.args, "global_tool_configurations", {}), records,
+        )
+        return self.configuration_model.parse(record.get("settings", {}), self.configuration_defaults)
 
     @classmethod
     def get_doc(cls) -> dict[str, str] | None:

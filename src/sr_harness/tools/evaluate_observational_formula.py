@@ -100,6 +100,7 @@ class EvaluateObservationalFormulaTool(BaseTool):
 
     @classmethod
     def format_result_dict(cls, result: dict[str, Any]) -> str:
+        """Format the observational result for the scientific agent timeline."""
         if result["task_type"] == "unbinned_distribution":
             text = (f"Evaluated density: p({result['target_expression']}) proportional to "
                     f"{result['formula']}\nObjective: {result['objective']}")

@@ -72,7 +72,7 @@ def test_count_bin_integral_not_center_value(tmp_path):
 def test_contract_file_does_not_activate_evaluator_or_change_session_settings(tmp_path):
     context(tmp_path)
     from sr_harness.evaluator import DefaultEvaluator
-    from sr_harness.web.session import InteractiveSession
+    from sr_harness.service.session import InteractiveSession
     session = InteractiveSession(tmp_path/'logs', workspace_path=tmp_path)
     settings = dict(session.settings)
     session.reload_context_data()

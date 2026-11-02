@@ -11,6 +11,7 @@ import sr_harness.api
 import sr_harness.core
 import sr_harness.evaluator
 import sr_harness.runtime
+import sr_harness.storage
 import sr_harness.tools
 import sr_harness_engine
 
@@ -21,6 +22,7 @@ PUBLIC_MODULES = (
     sr_harness.core,
     sr_harness.evaluator,
     sr_harness.runtime,
+    sr_harness.storage,
     sr_harness.tools,
     sr_harness_engine,
 )

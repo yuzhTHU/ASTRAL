@@ -10,7 +10,7 @@ from sr_harness.core import AgentContext
 from sr_harness.runtime.workspace import Workspace
 from sr_harness.tools.evaluate_formula import EvaluateTool
 from sr_harness.tools.statistics_analysis import StatisticsTool
-from sr_harness.web.session import InteractiveSession
+from sr_harness.service.session import InteractiveSession
 
 
 def ordinary_context(tmp_path):

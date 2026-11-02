@@ -7,10 +7,11 @@ __all__ = ["entrypoint"]
 
 
 COMMANDS = {
-    "run": ("run", "Launch the ASTRAL interactive workbench."),
+    "serve": ("serve", "Serve the internal Harness HTTP API."),
     "synthetic": ("synthetic", "Run ASTRAL on a synthetic symbolic-regression problem."),
     "benchmark": ("benchmark", "Evaluate ASTRAL and baseline algorithms on LLM-SRBench."),
     "tool": ("tool", "Inspect or invoke an ASTRAL tool."),
+    "tool-config": ("tool_config", "Configure tool runtime settings through Harness."),
 }
 
 

@@ -14,7 +14,8 @@ from scipy.linalg import cho_factor, cho_solve
 from scipy.optimize import minimize
 import sr_harness_engine as engine
 
-from .default_evaluator import DefaultEvaluator
+from .default_evaluator import DefaultEvaluator, ContextSplits, MetricDict
+from ..core import AgentContext
 from . import utils
 from ..core.context_data import load_context_data
 from .observational_contract import (
@@ -74,7 +75,7 @@ class ObservationalEvaluator(DefaultEvaluator):
             self._contract, self._data, self._signature = c, data, signature
         return self._contract, self._data
 
-    def validate_expression(self, f, y, context):
+    def validate_expression(self, f: engine.Expression, y: engine.Expression, context: AgentContext) -> None:
         """Validate a candidate only when this observational evaluator is selected.
 
         This policy belongs to the extension. Generic agents and tools do not
@@ -119,7 +120,8 @@ class ObservationalEvaluator(DefaultEvaluator):
             raise ValueError('Support must be a finite increasing interval')
         return lo,hi
 
-    def split(self, context):
+    def split(self, context: AgentContext) -> ContextSplits:
+        """Load and validate the frozen training and validation partitions."""
         c,data=self._load(context)
         if context.target!=c['target']:
             raise ValueError('Selected target differs from contract')
@@ -254,7 +256,7 @@ class ObservationalEvaluator(DefaultEvaluator):
         if c['task_type']=='binned_distribution':return self._counts(f,context,parameters)[0]
         return self._regression_loss(f,context,parameters)[0]
 
-    def fit(self,f,y,context):
+    def fit(self, f: engine.Expression, y: engine.Expression, context: AgentContext) -> engine.Expression:
         self.last_fit_diagnostics = None
         self.validate_expression(f, y, context)
         self._validate_partition(context, fitting=True)
@@ -323,9 +325,12 @@ class ObservationalEvaluator(DefaultEvaluator):
         if score>=1e99:raise ValueError('No finite candidate found; inspect density domain and parameter initialization')
         return engine.bind_parameters(f,dict(zip(names,map(float,best))))
 
-    def fit_candidate(self,f,context):return self.fit(f,engine.Symbol(context.target),context)
+    def fit_candidate(self, f: engine.Expression, context: AgentContext) -> engine.Expression:
+        """Fit a candidate against the declared observational target."""
+        return self.fit(f,engine.Symbol(context.target),context)
 
-    def evaluate(self,f,y,context):
+    def evaluate(self, f: engine.Expression, y: engine.Expression, context: AgentContext) -> MetricDict:
+        """Score a fitted expression using the selected observational objective."""
         self.validate_expression(f, y, context)
         self._validate_partition(context)
         c,_=self._load(context)
@@ -344,4 +349,6 @@ class ObservationalEvaluator(DefaultEvaluator):
         metrics=utils.regression_metrics(f,context.data[context.target],pred)
         return {**metrics,c.get('objective','mse'):loss,'n_samples':len(pred),**diagnostics}
 
-    def evaluate_candidate(self,f,context):return self.evaluate(f,engine.Symbol(context.target),context)
+    def evaluate_candidate(self, f: engine.Expression, context: AgentContext) -> MetricDict:
+        """Score a candidate against the declared observational target."""
+        return self.evaluate(f,engine.Symbol(context.target),context)

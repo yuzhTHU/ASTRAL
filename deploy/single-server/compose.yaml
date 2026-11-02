@@ -1,0 +1,85 @@
+name: astral
+
+services:
+  web:
+    image: ${ASTRAL_WEB_IMAGE:-astral-local-web:latest}
+    pull_policy: never
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      DB_DIALECT: postgresql
+      DATABASE_URL: postgresql://astral:${DB_PASSWORD:?Set DB_PASSWORD}@database:5432/astral
+      HARNESS_URL: http://harness:8000
+      HARNESS_SERVICE_TOKEN: ${HARNESS_SERVICE_TOKEN:?Set HARNESS_SERVICE_TOKEN}
+      CREDENTIAL_MASTER_KEY: ${CREDENTIAL_MASTER_KEY:?Set CREDENTIAL_MASTER_KEY}
+      APP_ORIGIN: ${APP_ORIGIN:-https://astral.thuai4s.ai}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      database:
+        condition: service_healthy
+      harness:
+        condition: service_healthy
+    networks: [internal, egress]
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 128
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 20s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+    logging: &logging
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  harness:
+    image: ${ASTRAL_HARNESS_IMAGE:-astral-local-harness:latest}
+    pull_policy: never
+    command: [serve, --host, 0.0.0.0, --port, "8000", --root, /data/harness-v2, --global-tasks, "2", --per-user-tasks, "1"]
+    environment:
+      HARNESS_SERVICE_TOKEN: ${HARNESS_SERVICE_TOKEN:?Set HARNESS_SERVICE_TOKEN}
+      ASTRAL_SAMPLE_DATA_ROOT: /samples
+    volumes:
+      - ${HARNESS_DATA_DIR:-/data/astral/harness-data}:/data
+      - ${SAMPLE_DATA_DIR:-/data/astral/samples}:/samples:ro
+    networks: [internal, egress]
+    restart: unless-stopped
+    mem_limit: 3g
+    cpus: 2
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+  database:
+    image: ${POSTGRES_IMAGE:-postgres:17-alpine}
+    pull_policy: never
+    environment:
+      POSTGRES_USER: astral
+      POSTGRES_DB: astral
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - ${POSTGRES_DATA_DIR:-/data/pgsql}:/var/lib/postgresql/data
+    networks: [internal]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 128
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U astral -d astral"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+
+networks:
+  internal:
+    internal: true
+  egress: {}

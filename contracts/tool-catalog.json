@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "tools": [
+    {
+      "name": "web_fetch",
+      "description": "Fetch and extract readable text from a public HTTP or HTTPS webpage URL.\nRejects non-public IP addresses, credentials in URLs, and HTTP redirects. If a site blocks\nautomated access (HTTP 401/403/429), returns ``blocked=True`` so you can search for an\nalternative source instead of retrying.",
+      "configuration_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "timeout_seconds": {
+            "type": "number",
+            "title": "请求超时 / Timeout (seconds)",
+            "minimum": 0.1,
+            "maximum": 120,
+            "default": 20
+          },
+          "proxy_mode": {
+            "type": "string",
+            "title": "连接方式 / Connection",
+            "enum": [
+              "direct",
+              "custom"
+            ],
+            "default": "direct"
+          },
+          "proxy_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "代理地址 / Proxy URL",
+            "maxLength": 2048,
+            "default": null,
+            "description": "HTTP/HTTPS proxy, no credentials. Address is resolved by Harness."
+          }
+        }
+      },
+      "defaults": {
+        "timeout_seconds": 20.0,
+        "proxy_mode": "direct",
+        "proxy_url": null
+      }
+    },
+    {
+      "name": "web_search",
+      "description": "Search the public web for scientific literature, documentation, and domain context.",
+      "configuration_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "timeout_seconds": {
+            "type": "number",
+            "title": "请求超时 / Timeout (seconds)",
+            "minimum": 0.1,
+            "maximum": 120,
+            "default": 15
+          },
+          "proxy_mode": {
+            "type": "string",
+            "title": "连接方式 / Connection",
+            "enum": [
+              "direct",
+              "custom"
+            ],
+            "default": "direct"
+          },
+          "proxy_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "title": "代理地址 / Proxy URL",
+            "maxLength": 2048,
+            "default": null,
+            "description": "HTTP/HTTPS proxy, no credentials. Address is resolved by Harness."
+          }
+        }
+      },
+      "defaults": {
+        "timeout_seconds": 15.0,
+        "proxy_mode": "direct",
+        "proxy_url": null
+      }
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 # Copyright (c) 2026-present, Yumeow. Licensed under the MIT License.
 """Bounded public-web search."""
+
 from __future__ import annotations
 
 from html.parser import HTMLParser
@@ -9,18 +10,10 @@ import socket
 from typing import Any, Dict
 from urllib.parse import parse_qs, unquote, urlparse
 
-import requests
+from ..core.tool_config import NetworkToolConfiguration
+from ..runtime.tool_http import tool_response
 
 from .base_tool import BaseTool, ToolMetadata
-
-
-def _session_proxies(tool: BaseTool) -> dict[str, str] | None:
-    environment = getattr(tool.context.args, "api_environment", {})
-    proxy = (
-        environment.get("HTTPS_PROXY") or environment.get("https_proxy")
-        or environment.get("HTTP_PROXY") or environment.get("http_proxy")
-    )
-    return {"http": proxy, "https": proxy} if proxy else None
 
 
 class _DuckDuckGoParser(HTMLParser):
@@ -55,7 +48,10 @@ class _DuckDuckGoParser(HTMLParser):
 @BaseTool.register("web_search")
 class WebSearchTool(BaseTool):
     """Tool for searching the public web for scientific papers, benchmarks, and documentation."""
+
     metadata = ToolMetadata(name="web_search")
+    configuration_model = NetworkToolConfiguration
+    configuration_defaults = {"timeout_seconds": 15, "proxy_mode": "direct", "proxy_url": None}
 
     def execute(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """Search the public web for scientific literature, documentation, and domain context.
@@ -74,21 +70,23 @@ class WebSearchTool(BaseTool):
         if callback is not None:
             results = callback(query, max_results)
             return {"query": query, "results": list(results)[:max_results], "provider": "callback"}
-        response = requests.post(
+        configuration = self.get_runtime_configuration()
+        with tool_response(
+            configuration,
+            "POST",
             "https://html.duckduckgo.com/html/",
             data={"q": query},
-            timeout=15,
+            allow_redirects=False,
             headers={"User-Agent": "SRAgent/1.0 (research assistant)"},
-            proxies=_session_proxies(self),
-        )
-        response.raise_for_status()
-        parser = _DuckDuckGoParser()
-        parser.feed(response.text)
-        return {
-            "query": query,
-            "results": parser.results[:max_results],
-            "provider": "duckduckgo-html",
-        }
+        ) as response:
+            response.raise_for_status()
+            parser = _DuckDuckGoParser()
+            parser.feed(response.text)
+            return {
+                "query": query,
+                "results": parser.results[:max_results],
+                "provider": "duckduckgo-html",
+            }
 
 
 class _TextParser(HTMLParser):
@@ -113,7 +111,10 @@ class _TextParser(HTMLParser):
 @BaseTool.register("web_fetch")
 class WebFetchTool(BaseTool):
     """Tool for fetching readable plain text from a public HTTP(S) webpage."""
+
     metadata = ToolMetadata(name="web_fetch")
+    configuration_model = NetworkToolConfiguration
+    configuration_defaults = {"timeout_seconds": 20, "proxy_mode": "direct", "proxy_url": None}
 
     def execute(self, url: str, max_characters: int = 30000) -> Dict[str, Any]:
         """Fetch and extract readable text from a public HTTP or HTTPS webpage URL.
@@ -154,47 +155,59 @@ class WebFetchTool(BaseTool):
         public_addresses = {
             address for address in addresses if ipaddress.ip_address(address).is_global
         }
-        proxies = _session_proxies(self)
-        if not public_addresses or (public_addresses != addresses and not proxies):
+        configuration = self.get_runtime_configuration()
+        # An explicit HTTP(S) proxy resolves the target hostname itself. Retain the
+        # original mixed-DNS compatibility in that mode; direct connections must
+        # reject every non-public answer. Neither mode permits all-private results.
+        if not public_addresses or (
+            public_addresses != addresses and configuration.proxy_mode == "direct"
+        ):
             raise ValueError("url must resolve only to public network addresses")
         limit = max(1000, min(int(max_characters), 50000))
-        response = requests.get(
+        with tool_response(
+            configuration,
+            "GET",
             url,
-            timeout=20,
             headers={"User-Agent": "SRHarness/1.0"},
             allow_redirects=False,
             stream=True,
-            proxies=proxies,
-        )
-        if response.is_redirect:
-            raise ValueError("redirects are not followed; fetch the public destination URL directly")
-        if response.status_code in {401, 403, 429}:
-            status_code = response.status_code
-            response.close()
-            return {
-                "url": url,
-                "text": "",
-                "truncated": False,
-                "blocked": True,
-                "status_code": status_code,
-                "message": (
-                    "The site blocked automated access. Do not retry this URL repeatedly; "
-                    "use web_search to find an accessible authoritative source for the same data."
-                ),
-            }
-        response.raise_for_status()
-        content_type = response.headers.get("content-type", "")
-        if "html" not in content_type and "text" not in content_type and "json" not in content_type:
-            raise ValueError(f"unsupported content type: {content_type}")
-        body = bytearray()
-        for chunk in response.iter_content(64 * 1024):
-            body.extend(chunk)
-            if len(body) >= 1_000_000:
-                break
-        parser = _TextParser()
-        parser.feed(bytes(body[:1_000_000]).decode(response.encoding or "utf-8", errors="replace"))
-        text = "\n".join(parser.parts)
-        return {"url": url, "text": text[:limit], "truncated": len(text) > limit}
+        ) as response:
+            if response.is_redirect:
+                raise ValueError(
+                    "redirects are not followed; fetch the public destination URL directly"
+                )
+            if response.status_code in {401, 403, 429}:
+                status_code = response.status_code
+                return {
+                    "url": url,
+                    "text": "",
+                    "truncated": False,
+                    "blocked": True,
+                    "status_code": status_code,
+                    "message": (
+                        "The site blocked automated access. Do not retry this URL repeatedly; "
+                        "use web_search to find an accessible authoritative source for the same data."
+                    ),
+                }
+            response.raise_for_status()
+            content_type = response.headers.get("content-type", "")
+            if (
+                "html" not in content_type
+                and "text" not in content_type
+                and "json" not in content_type
+            ):
+                raise ValueError(f"unsupported content type: {content_type}")
+            body = bytearray()
+            for chunk in response.iter_content(64 * 1024):
+                body.extend(chunk)
+                if len(body) >= 1_000_000:
+                    break
+            parser = _TextParser()
+            parser.feed(
+                bytes(body[:1_000_000]).decode(response.encoding or "utf-8", errors="replace")
+            )
+            text = "\n".join(parser.parts)
+            return {"url": url, "text": text[:limit], "truncated": len(text) > limit}
 
 
 """

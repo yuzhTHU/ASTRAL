@@ -1,0 +1,130 @@
+"use client";
+
+import {
+  Alert,
+  Button,
+  Layout,
+  Menu,
+  Result,
+  Space,
+  Spin,
+  Tag,
+  Typography,
+} from "antd";
+import {
+  ArrowLeftOutlined,
+  ExperimentOutlined,
+  TeamOutlined,
+  ToolOutlined,
+  ApiOutlined,
+  SafetyCertificateOutlined,
+} from "@ant-design/icons";
+import { useEffect, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import Link from "next/link";
+import { api } from "@/lib/client";
+import { ManagementSurface } from "./management-surface";
+import { UserAccountMenu } from "./user-account-menu";
+
+export function AdminShell({ children }: { children: ReactNode }) {
+  const path = usePathname();
+  const [identity, setIdentity] = useState<{
+    username: string;
+    role: string;
+  } | null>(null);
+  const [failure, setFailure] = useState("");
+  useEffect(() => {
+    api("auth/me")
+      .then(setIdentity)
+      .catch((e) => setFailure(String(e)));
+  }, []);
+  const items = [
+    {
+      key: "/admin",
+      icon: <TeamOutlined aria-hidden />,
+      label: <Link href="/admin">账号与注册 / Accounts</Link>,
+    },
+    {
+      key: "/admin/discovery-tasks",
+      icon: <ExperimentOutlined aria-hidden />,
+      label: <Link href="/admin/discovery-tasks">样例任务 / Samples</Link>,
+    },
+    {
+      key: "/admin/models",
+      icon: <ApiOutlined aria-hidden />,
+      label: <Link href="/admin/models">共享模型 / Models</Link>,
+    },
+    {
+      key: "/admin/tools",
+      icon: <ToolOutlined aria-hidden />,
+      label: <Link href="/admin/tools">工具配置 / Tools</Link>,
+    },
+  ];
+  return (
+    <ManagementSurface>
+      {!identity ? (
+        <div className="admin-loading">
+          {failure ? (
+            <Alert
+              type="error"
+              showIcon
+              title={failure}
+              description={<a href="/">返回登录 / Sign in</a>}
+            />
+          ) : (
+            <Spin description="正在加载管理控制台…" />
+          )}
+        </div>
+      ) : identity.role !== "admin" ? (
+        <Result
+          status="403"
+          title="仅管理员可访问 / Administrators only"
+          extra={<Button href="/">返回工作台 / Workbench</Button>}
+        />
+      ) : (
+        <Layout className="admin-layout">
+          <Layout.Header className="admin-header">
+            <Link href="/admin" className="admin-brand">
+              <span className="admin-brand-mark">A</span>
+              <span>
+                ASTRAL <small>管理控制台 / Administration</small>
+              </span>
+            </Link>
+            <Space size="middle">
+              <Tag
+                icon={<SafetyCertificateOutlined aria-hidden />}
+                color="blue"
+              >
+                管理员
+              </Tag>
+              <UserAccountMenu username={identity.username} />
+              <Button icon={<ArrowLeftOutlined aria-hidden />} href="/">
+                返回工作台
+              </Button>
+            </Space>
+          </Layout.Header>
+          <Layout>
+            <Layout.Sider
+              width={246}
+              className="admin-sidebar"
+              breakpoint="lg"
+              collapsedWidth={0}
+            >
+              <Typography.Text type="secondary" className="admin-nav-caption">
+                平台管理 / PLATFORM
+              </Typography.Text>
+              <Menu mode="inline" selectedKeys={[path]} items={items} />
+              <div className="admin-sidebar-note">ASTRAL · 科研平台</div>
+            </Layout.Sider>
+            <Layout.Content className="admin-content">
+              <nav className="admin-mobile-nav">
+                <Menu mode="horizontal" selectedKeys={[path]} items={items} />
+              </nav>
+              {children}
+            </Layout.Content>
+          </Layout>
+        </Layout>
+      )}
+    </ManagementSurface>
+  );
+}

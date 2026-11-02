@@ -68,6 +68,7 @@ class ObservationalStatisticsTool(BaseTool):
 
     @classmethod
     def format_result_dict(cls, result: dict[str, Any]) -> str:
+        """Format the observational result for the scientific agent timeline."""
         return (f"Analysis partition: train ({result['n_rows']} frozen rows from "
                 "discovery_contract.json; validation excluded).\n"
                 + StatisticsTool.format_result_dict(result))
