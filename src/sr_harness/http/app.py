@@ -9,13 +9,14 @@ import tempfile
 from typing import Any, Literal
 from urllib.parse import quote
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Query
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from starlette.background import BackgroundTask
 
 from ..service.base import Download, HarnessService, ServiceError
+from ..service.discovery_catalog import DiscoveryTask
 from ..service.redaction import scrub
 from .isolation import RequestWorkPool, RequestBodyLimit, request_work_keys
 from .responses import worker_json_response
@@ -24,6 +25,54 @@ from .responses import worker_json_response
 class CreateSession(BaseModel):
     tags: dict[str, str] = Field(default_factory=dict, max_length=16)
     idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class DiscoveryCatalog(BaseModel):
+    revision: int
+    tasks: list[DiscoveryTask]
+
+
+class DiscoveryTaskInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    task: DiscoveryTask
+    expected_revision: int = Field(ge=0)
+
+
+class DiscoveryOrder(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    names: list[str] = Field(max_length=10000)
+    expected_revision: int = Field(ge=0)
+
+
+class ToolConfigurationInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    settings: dict[str, Any]
+    expected_revision: int | None = Field(default=None, ge=0)
+
+
+class ToolConfigurationRecord(BaseModel):
+    schema_version: int
+    role: str
+    tool: str
+    revision: int
+    settings: dict[str, Any]
+    source: Literal["builtin", "global", "agent"]
+    source_revision: int
+    overridden: bool
+
+
+class ToolProbeInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str | None = Field(default=None, max_length=2048)
+    query: str | None = Field(default=None, max_length=1024)
+
+
+class ToolProbeResult(BaseModel):
+    ok: bool
+    configuration_revision: int
+    elapsed_seconds: float
+    message: str
+    characters: int | None = None
 
 
 class UpdateSession(BaseModel):
@@ -125,8 +174,22 @@ def create_app(service: HarnessService, *, token: str | None = None):
         version="1.0.0",
         lifespan=lifespan,
         responses={
-            status: {"model": ErrorEnvelope}
-            for status in (400, 401, 403, 404, 409, 413, 422, 429, 500, 503, 504)
+            status: {"model": ErrorEnvelope, "description": description}
+            # HTTPStatus phrases for 413/422 differ between Python 3.12 and 3.13.
+            # Keep the exported contract identical across development and CI.
+            for status, description in (
+                (400, "Bad Request"),
+                (401, "Unauthorized"),
+                (403, "Forbidden"),
+                (404, "Not Found"),
+                (409, "Conflict"),
+                (413, "Content Too Large"),
+                (422, "Unprocessable Content"),
+                (429, "Too Many Requests"),
+                (500, "Internal Server Error"),
+                (503, "Service Unavailable"),
+                (504, "Gateway Timeout"),
+            )
         },
     )
     app.state.work_pool = pool
@@ -216,6 +279,113 @@ def create_app(service: HarnessService, *, token: str | None = None):
     @app.get("/health")
     async def health():
         return {"status": "ok"}
+
+    @app.get("/v1/tools")
+    async def tool_catalog():
+        return await pool.run(service.tool_catalog)
+
+    @app.get("/v1/discovery-tasks", response_model=DiscoveryCatalog)
+    async def discovery_catalog():
+        return await pool.run(service.discovery_catalog)
+
+    @app.post("/v1/discovery-tasks", response_model=DiscoveryCatalog, status_code=201)
+    async def create_discovery_task(payload: DiscoveryTaskInput):
+        return await pool.run(service.save_discovery_task, payload.task.model_dump(),
+                              payload.expected_revision, create=True)
+
+    @app.put("/v1/discovery-tasks/order", response_model=DiscoveryCatalog)
+    async def reorder_discovery_tasks(payload: DiscoveryOrder):
+        return await pool.run(service.reorder_discovery_tasks, payload.names,
+                              payload.expected_revision)
+
+    @app.put("/v1/discovery-tasks/{name}", response_model=DiscoveryCatalog)
+    async def update_discovery_task(name: str, payload: DiscoveryTaskInput):
+        if name != payload.task.name:
+            raise ServiceError(422, "Task identifier is immutable", code="discovery_invalid")
+        return await pool.run(service.save_discovery_task, payload.task.model_dump(),
+                              payload.expected_revision)
+
+    @app.delete("/v1/discovery-tasks/{name}", response_model=DiscoveryCatalog)
+    async def delete_discovery_task(name: str, expected_revision: int = Query(ge=0)):
+        return await pool.run(service.delete_discovery_task, name, expected_revision)
+
+    @app.get("/v1/tool-configurations/{tool}", response_model=ToolConfigurationRecord)
+    async def global_tool_configuration(tool: str):
+        return await pool.run(service.tool_configuration, "global", tool)
+
+    @app.put("/v1/tool-configurations/{tool}", response_model=ToolConfigurationRecord)
+    async def configure_global_tool(tool: str, payload: ToolConfigurationInput):
+        return await pool.run(
+            service.configure_tool,
+            "global",
+            tool,
+            payload.settings,
+            payload.expected_revision,
+        )
+
+    @app.delete("/v1/tool-configurations/{tool}", response_model=ToolConfigurationRecord)
+    async def reset_global_tool(tool: str, expected_revision: int | None = Query(None, ge=0)):
+        return await pool.run(service.reset_tool_configuration, "global", tool, expected_revision)
+
+    @app.post("/v1/tool-configurations/{tool}/test", response_model=ToolProbeResult)
+    async def test_global_tool(tool: str, payload: ToolProbeInput):
+        return await pool.run(
+            service.test_tool_configuration,
+            "global",
+            tool,
+            payload.model_dump(exclude_none=True),
+        )
+
+    @app.get(
+        "/v1/agents/{role}/tool-configurations/{tool}",
+        response_model=ToolConfigurationRecord,
+    )
+    async def tool_configuration(role: Literal["search", "data", "evaluator"], tool: str):
+        return await pool.run(service.tool_configuration, role, tool)
+
+    @app.put(
+        "/v1/agents/{role}/tool-configurations/{tool}",
+        response_model=ToolConfigurationRecord,
+    )
+    async def configure_tool(
+        role: Literal["search", "data", "evaluator"],
+        tool: str,
+        payload: ToolConfigurationInput,
+    ):
+        return await pool.run(
+            service.configure_tool,
+            role,
+            tool,
+            payload.settings,
+            payload.expected_revision,
+        )
+
+    @app.delete(
+        "/v1/agents/{role}/tool-configurations/{tool}",
+        response_model=ToolConfigurationRecord,
+    )
+    async def reset_tool(
+        role: Literal["search", "data", "evaluator"],
+        tool: str,
+        expected_revision: int | None = Query(None, ge=0),
+    ):
+        return await pool.run(service.reset_tool_configuration, role, tool, expected_revision)
+
+    @app.post(
+        "/v1/agents/{role}/tool-configurations/{tool}/test",
+        response_model=ToolProbeResult,
+    )
+    async def test_tool(
+        role: Literal["search", "data", "evaluator"],
+        tool: str,
+        payload: ToolProbeInput,
+    ):
+        return await pool.run(
+            service.test_tool_configuration,
+            role,
+            tool,
+            payload.model_dump(exclude_none=True),
+        )
 
     @app.post("/v1/sessions", status_code=201, response_model=SessionInfo)
     async def create(payload: CreateSession):

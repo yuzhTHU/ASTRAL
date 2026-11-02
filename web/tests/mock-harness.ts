@@ -1,8 +1,60 @@
 // Test-only remote Harness double. No test mode or bypass is built into production code.
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+const toolCatalog = JSON.parse(
+  readFileSync(
+    new URL("../../contracts/tool-catalog.json", import.meta.url),
+    "utf8",
+  ),
+);
 const sessions = new Map<string, any>(),
   creations = new Map<string, string>();
+const globalToolConfigurations: Record<string, any> = {};
+const agentToolConfigurations: Record<string, any> = {};
+const discoveryCatalog = {
+  revision: 0,
+  tasks: JSON.parse(
+    readFileSync(
+      new URL(
+        "../../src/sr_harness/service/migrations/0001_discovery_tasks.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ).tasks,
+};
+function configurationRecord(
+  role: string,
+  tool: string,
+  records: Record<string, any>,
+) {
+  const definition = toolCatalog.tools.find((t: any) => t.name === tool);
+  const own = records[`${role}:${tool}`];
+  let value = {
+    schema_version: 1,
+    role,
+    tool,
+    revision: own?.revision || 0,
+    overridden: !!own?.settings,
+    settings: definition.defaults,
+    source: "builtin",
+    source_revision: 0,
+  };
+  for (const [mapping, key, source] of [
+    [globalToolConfigurations, `global:${tool}`, "global"],
+    ...(role === "global" ? [] : [[records, `${role}:${tool}`, "agent"]]),
+  ] as [Record<string, any>, string, string][]) {
+    if (mapping[key]?.settings)
+      value = {
+        ...value,
+        settings: mapping[key].settings,
+        source,
+        source_revision: mapping[key].revision,
+      };
+  }
+  return value;
+}
 createServer(async (req, res) => {
   if (
     req.headers.authorization !== "Bearer playwright-internal-token-12345678"
@@ -21,6 +73,96 @@ createServer(async (req, res) => {
       .writeHead(status, { "content-type": "application/json" })
       .end(JSON.stringify(value));
   };
+  if (url.pathname === "/v1/tools") return reply(toolCatalog);
+  if (
+    url.pathname === "/v1/discovery-tasks" ||
+    url.pathname.startsWith("/v1/discovery-tasks/")
+  ) {
+    if (req.method === "GET") return reply(discoveryCatalog);
+    const revision =
+      req.method === "DELETE"
+        ? Number(url.searchParams.get("expected_revision"))
+        : body.expected_revision;
+    if (revision !== discoveryCatalog.revision)
+      return reply(
+        { error: { code: "discovery_conflict", message: "Reload catalog" } },
+        409,
+      );
+    const name = decodeURIComponent(url.pathname.split("/")[3] || "");
+    if (name === "order")
+      discoveryCatalog.tasks.sort(
+        (a: any, b: any) =>
+          body.names.indexOf(a.name) - body.names.indexOf(b.name),
+      );
+    else if (req.method === "DELETE")
+      discoveryCatalog.tasks = discoveryCatalog.tasks.filter(
+        (t: any) => t.name !== name,
+      );
+    else if (req.method === "POST") discoveryCatalog.tasks.push(body.task);
+    else
+      discoveryCatalog.tasks = discoveryCatalog.tasks.map((t: any) =>
+        t.name === name ? body.task : t,
+      );
+    discoveryCatalog.revision++;
+    return reply(discoveryCatalog, req.method === "POST" ? 201 : 200);
+  }
+  const globalConfiguration = url.pathname.match(
+    /^\/v1\/tool-configurations\/(web_fetch|web_search)(\/test)?$/,
+  );
+  const agentConfiguration = url.pathname.match(
+    /^\/v1\/agents\/(search|data|evaluator)\/tool-configurations\/(web_fetch|web_search)(\/test)?$/,
+  );
+  if (globalConfiguration || agentConfiguration) {
+    const role = globalConfiguration ? "global" : agentConfiguration![1];
+    const tool = globalConfiguration
+      ? globalConfiguration[1]
+      : agentConfiguration![2];
+    const probe = globalConfiguration
+      ? globalConfiguration[2]
+      : agentConfiguration![3];
+    const records = globalConfiguration
+      ? globalToolConfigurations
+      : agentToolConfigurations;
+    if (!records) return reply({ error: { message: "Not found" } }, 404);
+    let record = configurationRecord(role, tool, records);
+    if (probe)
+      return reply({
+        ok: true,
+        configuration_revision: record.revision,
+        elapsed_seconds: 0.01,
+        characters: 23,
+        message: "Connection succeeded",
+      });
+    if (["PUT", "DELETE"].includes(req.method!)) {
+      const expected =
+        req.method === "DELETE"
+          ? url.searchParams.get("expected_revision")
+          : body.expected_revision;
+      if (
+        expected !== undefined &&
+        expected !== null &&
+        Number(expected) !== record.revision
+      )
+        return reply(
+          {
+            error: {
+              code: "tool_config_conflict",
+              message: "Tool configuration changed; reload before saving",
+            },
+          },
+          409,
+        );
+      records[`${role}:${tool}`] = {
+        revision: record.revision + 1,
+        settings:
+          req.method === "DELETE"
+            ? null
+            : { ...record.settings, ...body.settings },
+      };
+      record = configurationRecord(role, tool, records);
+    }
+    return reply(record);
+  }
   if (url.pathname === "/v1/sessions" && req.method === "POST") {
     let id = creations.get(body.idempotency_key);
     if (!id) {
@@ -53,8 +195,8 @@ createServer(async (req, res) => {
           validation_fraction: 0.2,
           ranking_metric: "mse",
         },
-        data_agent_settings: {},
-        evaluator_agent_settings: {},
+        data_agent_settings: { tools: [], skills: [] },
+        evaluator_agent_settings: { tools: [], skills: [] },
         topk_records: [],
       });
     }
@@ -98,7 +240,47 @@ createServer(async (req, res) => {
     return reply(state);
   }
   if (path === "/workspace/preview") return reply({ text: "x,y\n1,2\n2,4" });
-  if (path === "/data/discovery-tasks") return reply({ tasks: [] });
+  if (path === "/data/discovery-tasks")
+    return reply({
+      tasks: discoveryCatalog.tasks
+        .filter((t: any) => t.enabled)
+        .map(
+          ({
+            data_locations,
+            preparation,
+            evaluation,
+            task,
+            files,
+            ...summary
+          }: any) => ({ ...summary, available: true }),
+        ),
+    });
+  if (path === "/data/discovery-tasks/load") {
+    const task = discoveryCatalog.tasks.find(
+      (t: any) => t.name === body.name && t.enabled,
+    );
+    if (!task)
+      return reply(
+        { error: { code: "discovery_not_found", message: "Task not found" } },
+        404,
+      );
+    const mounts = task.data_locations.map((p: string) => p.split("/").pop());
+    state.files.push(
+      ...mounts.map((name: string) => ({ name, path: name, directory: false })),
+    );
+    return reply({
+      name: task.name,
+      mounts,
+      read_only: true,
+      prompts: {
+        data_agent: task.preparation.replaceAll("{inputs}", mounts.join(", ")),
+        evaluator_agent: task.evaluation,
+        problem_description: task.task,
+        system_prompt: "You are a scientist",
+        user_prompt: task.task,
+      },
+    });
+  }
   if (path === "/data/context" && !state.context_ready)
     return reply({
       has_manifest: false,

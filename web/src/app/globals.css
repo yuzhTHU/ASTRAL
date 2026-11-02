@@ -21,6 +21,16 @@
     --danger: #ff9ba9;
     color-scheme: dark;
   }
+  :scope:has(.tool-configuration-page) {
+    min-height: 100vh;
+    background: var(--bg);
+    color: var(--text);
+    font:
+      13px/1.6 Inter,
+      system-ui,
+      sans-serif;
+    padding: 1px 0;
+  }
   * {
     box-sizing: border-box;
   }
@@ -510,6 +520,7 @@
     max-width: 100%;
     padding: 8px 0;
   }
+
   .event .katex-display {
     overflow-x: auto;
   }

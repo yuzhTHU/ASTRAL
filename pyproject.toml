@@ -82,6 +82,7 @@ sr_harness = [
     "**/*.md",
     "**/*.yaml",
     "service/*.json",
+    "service/migrations/*.json",
 ]
 sr_harness_engine = ["README.zh.md"]
 

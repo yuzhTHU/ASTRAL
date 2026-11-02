@@ -14,12 +14,16 @@ import uuid
 import zipfile
 
 from .base import Download, HarnessService, ServiceError
+from .discovery_catalog import DiscoveryTaskStore
 from .environment import StrictEnvironment
+from .tool_configuration import ToolConfigurationStore, catalog
 from .events import event_batch, event_download
 from .operations import build_operations
 from .records import _number_records, _with_core_derivatives, _strip_detail
 from .session import InteractiveSession
 from .redaction import register, scrub
+from ..storage import WorkspaceStorage, LocalDiskWorkspaceStorage
+from ..storage.local import LOCAL_NAMESPACE
 
 ROLES = ("search", "data", "evaluator")
 PROVIDERS = {
@@ -36,7 +40,14 @@ STARTS = {"start": "search", "prepare_data": "data", "start_evaluator_assistance
 
 
 class LocalHarnessService(HarnessService):
-    def __init__(self, root: str | Path, *, global_tasks=8, per_user_tasks=2):
+    def __init__(
+        self,
+        root: str | Path,
+        *,
+        storage: WorkspaceStorage | None = None,
+        global_tasks=8,
+        per_user_tasks=2,
+    ):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
@@ -44,25 +55,26 @@ class LocalHarnessService(HarnessService):
         self._sessions: dict[str, InteractiveSession] = {}
         self._call_locks: dict[str, threading.RLock] = {}
         self._records = {}
+        self.storage = storage if storage is not None else LocalDiskWorkspaceStorage(self.root)
+        self._locations = {}
+        self._global_tool_store = ToolConfigurationStore(self.root / "tool-defaults.json")
+        self._agent_tool_store = ToolConfigurationStore(
+            self.root / "agent-tool-configurations.json", parent=self._global_tool_store
+        )
+        self._discovery_store = DiscoveryTaskStore(self.root / "discovery-tasks.json")
         self._active: dict[tuple[str, str], str] = {}
         self.global_tasks, self.per_user_tasks = global_tasks, per_user_tasks
-        for directory in self.root.iterdir():
-            if directory.is_dir() and (directory / "metadata.json").is_file():
-                self._records[directory.name] = json.loads(
-                    (directory / "metadata.json").read_text(encoding="utf-8")
-                )
+        for location, record in self.storage.load_sessions():
+            self._records[location.session_id] = record
+            self._locations[location.session_id] = location
         self._stop = threading.Event()
         self._writer = threading.Thread(
             target=self._checkpoint_loop, daemon=True, name="harness-checkpoint"
         )
         self._writer.start()
 
-    def _write(self, path, value):
-        temporary = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
-        temporary.write_text(
-            json.dumps(value, ensure_ascii=False, allow_nan=False), encoding="utf-8"
-        )
-        temporary.replace(path)
+    def _write_metadata(self, sid):
+        self.storage.write_json(self._locations[sid], "metadata.json", self._records[sid])
 
     def _metadata(self, sid):
         if not re.fullmatch(r"[a-f0-9]{32}", sid) or sid not in self._records:
@@ -91,22 +103,28 @@ class LocalHarnessService(HarnessService):
                     raise ServiceError(409, "Idempotency key already used with different tags")
                 return self._public(existing)
             sid = uuid.uuid4().hex
+            namespace = tags.get("user_ref") or LOCAL_NAMESPACE
             record = {
                 "id": sid,
+                "storage_namespace": namespace,
                 "tags": tags,
                 "archived": False,
                 "created_at": time.time(),
                 "creation_key": idempotency_key,
                 "commands": {},
             }
-            (self.root / sid).mkdir()
-            self._write(self.root / sid / "metadata.json", record)
+            location = self.storage.create_session(namespace, sid, record)
+            self._locations[sid] = location
             self._records[sid] = record
             return self._public(record)
 
     @staticmethod
     def _public(record):
-        return {k: v for k, v in record.items() if k not in {"creation_key", "commands"}}
+        return {
+            k: v
+            for k, v in record.items()
+            if k not in {"creation_key", "commands", "storage_namespace"}
+        }
 
     def list_sessions(self, tags=None):
         with self._lock:
@@ -147,10 +165,17 @@ class LocalHarnessService(HarnessService):
             ):
                 raise ServiceError(409, "Stop active agents before archiving", code="session_busy")
             if tags is not None:
-                record["tags"] = self._tags(tags)
+                tags = self._tags(tags)
+                if (tags.get("user_ref") or LOCAL_NAMESPACE) != record["storage_namespace"]:
+                    raise ServiceError(
+                        409,
+                        "A session's storage owner cannot be changed",
+                        code="storage_owner_immutable",
+                    )
+                record["tags"] = tags
             if archived is not None:
                 record["archived"] = bool(archived)
-            self._write(self.root / session_id / "metadata.json", record)
+            self._write_metadata(session_id)
             return self._public(record)
 
     def _session(self, sid):
@@ -162,17 +187,20 @@ class LocalHarnessService(HarnessService):
         with load_lock:
             if sid in self._sessions:
                 return self._sessions[sid]
-            directory = self.root / sid
+            location = self._locations[sid]
+            snapshot = self.storage.read_json(location, "snapshot.json")
             session = InteractiveSession(
-                directory,
-                run_dir=directory / "runs",
-                workspace_path=directory / "workspace",
+                location.directory,
+                run_dir=location.runs,
+                workspace_path=location.workspace,
                 service_mode=True,
             )
+            session.discovery_catalog = self._discovery_store
             session.conversation_id = sid
-            snapshot = directory / "snapshot.json"
-            if snapshot.is_file():
-                session.restore_persistent_state(json.loads(snapshot.read_text(encoding="utf-8")))
+            if snapshot is not None:
+                session.restore_persistent_state(snapshot)
+            session.context.args.tool_configurations = self._agent_tool_store.records
+            session.context.args.global_tool_configurations = self._global_tool_store.records
             with self._lock:
                 self._sessions[sid] = session
             return session
@@ -197,6 +225,66 @@ class LocalHarnessService(HarnessService):
             )
             if not (thread and thread.is_alive()) and manager.state != "paused":
                 del self._active[key]
+
+    def _tool_store(self, role):
+        return self._global_tool_store if role == "global" else self._agent_tool_store
+
+    def tool_catalog(self):
+        return catalog()
+
+    def discovery_catalog(self):
+        return self._discovery_store.catalog()
+
+    def save_discovery_task(self, task, expected_revision, *, create=False):
+        return self._discovery_store.save(task, expected_revision, create=create)
+
+    def delete_discovery_task(self, name, expected_revision):
+        return self._discovery_store.delete(name, expected_revision)
+
+    def reorder_discovery_tasks(self, names, expected_revision):
+        return self._discovery_store.reorder(names, expected_revision)
+
+    def tool_configuration(self, role, tool):
+        return self._tool_store(role).get(role, tool)
+
+    def configure_tool(self, role, tool, settings, expected_revision=None):
+        return self._tool_store(role).put(role, tool, settings, expected_revision)
+
+    def reset_tool_configuration(self, role, tool, expected_revision=None):
+        return self._tool_store(role).reset(role, tool, expected_revision)
+
+    def test_tool_configuration(self, role, tool, parameters):
+        import argparse
+        from ..core import AgentContext
+
+        record = self.tool_configuration(role, tool)
+        cls = ToolConfigurationStore.definition(role, tool)
+        instance = cls(
+            context=AgentContext(
+                args=argparse.Namespace(tool_configurations={f"search:{tool}": record})
+            )
+        )
+        instance.agent_role = "search"
+        started = time.monotonic()
+        try:
+            result = instance.execute(**parameters)
+            return {
+                "ok": not result.get("blocked", False),
+                "configuration_revision": record["revision"],
+                "elapsed_seconds": time.monotonic() - started,
+                "characters": len(result.get("text", "")),
+                "message": "Target blocked access"
+                if result.get("blocked")
+                else "Connection succeeded",
+            }
+        except Exception:
+            # Network exceptions can contain endpoint/proxy details; never return provider bodies.
+            return {
+                "ok": False,
+                "configuration_revision": record["revision"],
+                "elapsed_seconds": time.monotonic() - started,
+                "message": "Connection failed; check proxy, timeout and public target URL",
+            }
 
     def invoke(self, session_id, operation, parameters, *, idempotency_key=None):
         if operation == "operation_status":
@@ -259,7 +347,7 @@ class LocalHarnessService(HarnessService):
                     "digest": digest,
                     "result": {"operation_id": idempotency_key, "status": "pending_or_interrupted"},
                 }
-                self._write(self.root / session_id / "metadata.json", record)
+                self._write_metadata(session_id)
             try:
                 result = scrub(self._execute(session, operation, parameters))
                 if idempotency_key and (operation in STARTS or operation == "control_command"):
@@ -271,14 +359,14 @@ class LocalHarnessService(HarnessService):
             except BaseException as error:
                 if idempotency_key and not getattr(error, "started", False):
                     record["commands"].pop(idempotency_key, None)
-                    self._write(self.root / session_id / "metadata.json", record)
+                    self._write_metadata(session_id)
                 if role:
                     with self._admission:
                         self._prune()
                 raise
             if idempotency_key:
                 record["commands"][idempotency_key] = {"digest": digest, "result": result}
-                self._write(self.root / session_id / "metadata.json", record)
+                self._write_metadata(session_id)
             self._checkpoint(session_id)
             return result
 
@@ -455,13 +543,8 @@ class LocalHarnessService(HarnessService):
             descriptor, filename = tempfile.mkstemp(suffix=".zip")
             os.close(descriptor)
             with zipfile.ZipFile(filename, "w", zipfile.ZIP_DEFLATED) as archive:
-                for file in (self.root / session_id).rglob("*"):
-                    if (
-                        file.is_file()
-                        and not file.is_symlink()
-                        and file.name not in {"metadata.json", ".env"}
-                    ):
-                        archive.write(file, file.relative_to(self.root / session_id))
+                for name, file in self.storage.export_files(self._locations[session_id]):
+                    archive.write(file, name)
 
             def chunks():
                 with open(filename, "rb") as stream:
@@ -477,7 +560,9 @@ class LocalHarnessService(HarnessService):
     def _checkpoint(self, sid):
         session = self._sessions.get(sid)
         if session is not None:
-            self._write(self.root / sid / "snapshot.json", scrub(session.export_persistent_state()))
+            self.storage.write_json(
+                self._locations[sid], "snapshot.json", scrub(session.export_persistent_state())
+            )
 
     def _checkpoint_loop(self):
         while not self._stop.wait(5):

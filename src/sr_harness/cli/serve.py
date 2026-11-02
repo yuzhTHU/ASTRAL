@@ -7,7 +7,11 @@ def setup_parser(parser=None):
     parser = parser or argparse.ArgumentParser(prog="astral serve")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--root", default="./harness-data")
+    parser.add_argument(
+        "--root",
+        default="./harness-data",
+        help="Harness state root; local workspaces use users/<user-ref>/<session-id>/workspace",
+    )
     parser.add_argument("--global-tasks", type=int, default=8)
     parser.add_argument("--per-user-tasks", type=int, default=2)
     return parser

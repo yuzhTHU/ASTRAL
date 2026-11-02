@@ -14,7 +14,10 @@ export default defineConfig({
       reuseExistingServer: false,
     },
     {
-      command: "npm run db:migrate && npm run dev -- --port 3100",
+      command:
+        process.env.PLAYWRIGHT_PRODUCTION === "1"
+          ? "npm run db:migrate && npm run start -- --port 3100"
+          : "npm run db:migrate && npm run dev -- --port 3100",
       url: "http://localhost:3100/api/health",
       reuseExistingServer: false,
       timeout: 120000,

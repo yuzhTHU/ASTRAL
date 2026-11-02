@@ -11,7 +11,7 @@ jobs:
       - run: pip install -e '.[dev,tools]'
       - run: pytest --ignore=tests/playground --ignore=tests/deploy
       - run: python scripts/export_harness_openapi.py
-      - run: git diff --exit-code -- contracts/harness.openapi.json
+      - run: git diff --exit-code -- contracts/harness.openapi.json contracts/tool-catalog.json
   web:
     runs-on: ubuntu-latest
     defaults:

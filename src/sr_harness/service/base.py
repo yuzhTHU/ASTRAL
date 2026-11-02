@@ -45,6 +45,46 @@ class HarnessService(ABC):
     def credentials(self, session_id: str, role: str, configuration: dict) -> None: ...
 
     @abstractmethod
+    def tool_catalog(self) -> dict: ...
+
+    @abstractmethod
+    def discovery_catalog(self) -> dict: ...
+
+    @abstractmethod
+    def save_discovery_task(
+        self, task: dict, expected_revision: int, *, create: bool = False
+    ) -> dict: ...
+
+    @abstractmethod
+    def delete_discovery_task(self, name: str, expected_revision: int) -> dict: ...
+
+    @abstractmethod
+    def reorder_discovery_tasks(self, names: list[str], expected_revision: int) -> dict: ...
+
+    @abstractmethod
+    def tool_configuration(self, role: str, tool: str) -> dict: ...
+
+    @abstractmethod
+    def configure_tool(
+        self,
+        role: str,
+        tool: str,
+        settings: dict,
+        expected_revision: int | None = None,
+    ) -> dict: ...
+
+    @abstractmethod
+    def reset_tool_configuration(
+        self,
+        role: str,
+        tool: str,
+        expected_revision: int | None = None,
+    ) -> dict: ...
+
+    @abstractmethod
+    def test_tool_configuration(self, role: str, tool: str, parameters: dict) -> dict: ...
+
+    @abstractmethod
     def upload(self, session_id: str, path: str, stream: BinaryIO) -> dict: ...
 
     @abstractmethod

@@ -19,5 +19,8 @@ with tempfile.TemporaryDirectory() as root:
         (ROOT / "contracts/harness.openapi.json").write_text(
             json.dumps(schema, indent=2) + "\n", encoding="utf-8"
         )
+        (ROOT / "contracts/tool-catalog.json").write_text(
+            json.dumps(service.tool_catalog(), ensure_ascii=False, indent=2) + "\n", encoding="utf8"
+        )
     finally:
         service.close()

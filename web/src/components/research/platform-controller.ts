@@ -3,7 +3,11 @@
 import { researchRuntime } from "./runtime";
 import { researchTransport } from "./transport";
 import { modelProfiles } from "./model-profiles";
-export function mountPlatform(root: HTMLElement, manage: () => void) {
+export function mountPlatform(
+  root: HTMLElement,
+  manage: () => void,
+  openSettings: () => void = manage,
+) {
   const runtime = researchRuntime(root);
   const {
     document,
@@ -9833,47 +9837,15 @@ export function mountPlatform(root: HTMLElement, manage: () => void) {
   let discoveryTasks = [],
     discoveryLoading = false;
   function renderDiscoveryTasks() {
-    const references = {
-      Chen_NatureAstronomy2023: {
-        citation: "(Chen et al., Nature Astronomy, 2023)",
-        summary: String.raw`基于双模 RR Lyrae 的周期与 SDSS 光谱金属丰度数据，得到金属丰度标定公式：
-$$[\mathrm{Fe}/\mathrm{H}]=-173\operatorname{log}_{10}\!\left(\frac{P_{1\mathrm{O}}/P_{\mathrm{F}}}{0.745}\right)-6.62\operatorname{log}_{10}\!\left(\frac{P_{1\mathrm{O}}}{0.37}\right)-1.76$$`,
-      },
-      Xiang_Nature2022: {
-        citation: "(Xiang & Rix, Nature, 2022)",
-        summary: String.raw`基于恒星年龄、化学丰度与轨道参数目录，得到厚盘族群的窄年龄—金属丰度序列，可近似描述为：
-$$⟨τ⟩\approxτ_0+a[\mathrm{Fe}/\mathrm{H}]$$`,
-      },
-      Li_Nature2023: {
-        citation: "(Li et al., Nature, 2023)",
-        summary: String.raw`基于恒星质量、金属丰度及动力学族群数据，得到初始质量函数的幂律描述，其斜率随丰度与时代变化：
-$$\frac{dN}{dM}∝ M^{-\alpha},\quad\alpha=\alpha([\mathrm{Fe}/\mathrm{H}],t)$$`,
-      },
-      Feng_Science2022: {
-        citation: "(Feng et al., Science, 2022)",
-        summary: String.raw`基于校准射电爆发的频率分辨偏振数据，得到退偏振关系，并约束磁离子环境的变化：
-$$\frac{p}{p_0}=\operatorname{exp}\!\left(-2\sigma_{\mathrm{RM}}^2\lambda^4\right)$$`,
-      },
-      Li_Nature2021: {
-        citation: "(Li et al., Nature, 2021)",
-        summary: String.raw`基于 1652 次重复 FRB 的爆发表，得到由对数正态与广义柯西分量组合描述的能量分布：
-$$N(E)=\frac{N_0}{\sqrt{2\pi}\sigma_E E}\operatorname{exp}\!\left[-\frac{(\operatorname{log} E-\operatorname{log} E_0)^2}{2\sigma_E^2}\right]+\frac{\epsilon_E}{1+(E/E_0)^{\alpha_E}}$$`,
-      },
-      Chiang_NatureAstronomy2026: {
-        citation: "(Chiang, Nature Astronomy, 2026)",
-        summary: String.raw`基于宇宙谱线背景统计与气体转换模型，得到宇宙平均分子气体密度随红移演化的拟合：
-$$\Omega_{\mathrm{H}_2}(z)\approx\frac{1.9\times10^{-4}(1+z)^{2.3}}{1+[(1+z)/2.8]^{6.5}}$$`,
-      },
-      Kainulainen_Science2014: {
-        citation: "(Kainulainen et al., Science, 2014)",
-        summary: String.raw`基于分子云消光图重建的体密度统计（本例提供论文观测表），得到密度分布及恒星形成阈值的约束：
-$$p(s)∝\operatorname{exp}\!\left[-\frac{(s-\mu)^2}{2\sigma_s^2}\right],\quad n_{\mathrm{crit}}\approx(5\pm2)\times10^3\,\mathrm{cm}^{-3}$$`,
-      },
-    };
     const options = document.querySelector("#demo-picker .demo-options");
     options.replaceChildren();
     for (const task of discoveryTasks) {
-      const reference = references[task.name],
+      const reference = {
+          citation: task.citation || task.title,
+          summary:
+            (currentLocale === "en" ? task.summary_en : task.summary_zh) ||
+            task.summary_zh || task.relation_zh,
+        },
         card = el("article", undefined, "demo-option"),
         enabled = task.available && !discoveryLoading;
       card.dataset.discoveryTask = task.name;
@@ -9934,7 +9906,11 @@ $$p(s)∝\operatorname{exp}\!\left[-\frac{(s-\mu)^2}{2\sigma_s^2}\right],\quad n
       const result = await api("/api/data/discovery-tasks");
       discoveryTasks = result.tasks;
       renderDiscoveryTasks();
-      $("demo-picker-status").textContent = "";
+      $("demo-picker-status").textContent = discoveryTasks.length
+        ? ""
+        : currentLocale === "en"
+          ? "No sample tasks are enabled. Contact an administrator to configure them."
+          : "暂无启用的样例任务，请联系管理员配置。";
     } catch (error) {
       $("demo-picker-status").textContent = error.message;
     }
@@ -10205,7 +10181,7 @@ $$p(s)∝\operatorname{exp}\!\left[-\frac{(s-\mu)^2}{2\sigma_s^2}\right],\quad n
   account.title = "账户与模型配置 / Account and models";
   account.setAttribute("aria-label", account.title);
   account.textContent = "⚙";
-  account.onclick = manage;
+  account.onclick = openSettings;
   document.querySelector("header").insertBefore(account, $("theme-toggle"));
 
   return () => runtime.dispose();

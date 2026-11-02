@@ -940,7 +940,7 @@ def build_operations(session):
     def discovery_tasks():
         from .discovery import list_cases
 
-        return {"tasks": list_cases()}
+        return {"tasks": list_cases(getattr(session, "discovery_catalog", None))}
 
     def load_discovery_task(payload: dict = None):
         from .discovery import load_case

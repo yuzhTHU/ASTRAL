@@ -81,7 +81,8 @@ async function handler(
       route = path.join("/"),
       method = request.method;
     if (route === "health" && method === "GET") return json({ status: "ok" });
-    if (route === "version" && method === "GET") return json({ version: projectVersion });
+    if (route === "version" && method === "GET")
+      return json({ version: projectVersion });
     if (route === "auth/mode" && method === "GET")
       return json({ mode: await registrationMode() });
     if (
@@ -103,6 +104,60 @@ async function handler(
       return json(await login(values.username, values.password));
     }
     const user = await requireUser(path[0] === "admin");
+    if (
+      route === "admin/discovery-tasks" ||
+      (path[0] === "admin" &&
+        path[1] === "discovery-tasks" &&
+        path.length === 3)
+    ) {
+      const allowed =
+        path.length === 2
+          ? ["GET", "POST"]
+          : path[2] === "order"
+            ? ["PUT"]
+            : ["PUT", "DELETE"];
+      if (!allowed.includes(method))
+        throw new ApiError(405, "Method not allowed");
+      const remotePath = `/v1/${path.slice(1).map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
+      const result = await harnessJSON(
+        remotePath,
+        method,
+        ["POST", "PUT"].includes(method) ? await body(request) : undefined,
+      );
+      if (method !== "GET")
+        await audit(user.id, `discovery.${method.toLowerCase()}`, route);
+      return json(result, method === "POST" ? 201 : 200);
+    }
+    if (route === "tool-catalog" && method === "GET")
+      return json(await harnessJSON("/v1/tools"));
+    const configurationRoute =
+      /^(tool-configurations\/[^/]+|agents\/(?:search|data|evaluator)\/tool-configurations\/[^/]+)(\/test)?$/.exec(
+        route,
+      );
+    if (
+      configurationRoute &&
+      ((!configurationRoute[2] && ["GET", "PUT", "DELETE"].includes(method)) ||
+        (configurationRoute[2] && method === "POST"))
+    ) {
+      if (method !== "GET" && user.role !== "admin")
+        throw new ApiError(
+          403,
+          "Only administrators can change or test shared tool configurations",
+        );
+      const remotePath = `/v1/${path.map(encodeURIComponent).join("/")}${request.nextUrl.search}`;
+      const result = await harnessJSON(
+        remotePath,
+        method,
+        ["PUT", "POST"].includes(method) ? await body(request) : undefined,
+      );
+      if (["PUT", "DELETE"].includes(method))
+        await audit(
+          user.id,
+          "tool-configuration." + method.toLowerCase(),
+          configurationRoute[1],
+        );
+      return json(result);
+    }
     if (route === "auth/me" && method === "GET") return json(user);
     if (route === "auth/logout" && method === "POST") {
       await logout();
@@ -349,11 +404,24 @@ async function handler(
     throw new ApiError(404, "Not found");
   } catch (error) {
     if (error instanceof z.ZodError)
-      return json({ error: { code: "invalid_fields", message: "Invalid request fields" } }, 422);
+      return json(
+        {
+          error: { code: "invalid_fields", message: "Invalid request fields" },
+        },
+        422,
+      );
     if (error instanceof ApiError)
-      return json({ error: { code: error.code, message: error.message } }, error.status);
+      return json(
+        { error: { code: error.code, message: error.message } },
+        error.status,
+      );
     return json(
-      { error: { code: "internal_error", message: "Operation failed; refresh and retry" } },
+      {
+        error: {
+          code: "internal_error",
+          message: "Operation failed; refresh and retry",
+        },
+      },
       500,
     );
   }

@@ -29,6 +29,19 @@ class HttpHarnessService(HarnessService):
     def _json(self, method, path, **kwargs):
         response = self.client.request(method, path, **kwargs)
         if response.is_error:
+            try:
+                payload = response.json()
+                error = payload.get("error", {}) if isinstance(payload, dict) else {}
+                if not isinstance(error, dict):
+                    error = {}
+            except ValueError:
+                error = {}
+            if str(error.get("code", "")).startswith(("tool_config_", "discovery_")):
+                raise ServiceError(
+                    response.status_code,
+                    error.get("message", "Tool configuration failed"),
+                    code=error["code"],
+                )
             raise ServiceError(
                 response.status_code, "Remote Harness operation failed", code="remote_error"
             )
@@ -101,6 +114,55 @@ class HttpHarnessService(HarnessService):
             f"/v1/sessions/{quote(session_id, safe='')}/credentials/{quote(role, safe='')}",
             json=configuration,
         )
+
+    def tool_catalog(self):
+        return self._json("GET", "/v1/tools")
+
+    def discovery_catalog(self):
+        return self._json("GET", "/v1/discovery-tasks")
+
+    def save_discovery_task(self, task, expected_revision, *, create=False):
+        path = "/v1/discovery-tasks"
+        if not create:
+            path += "/" + quote(task["name"], safe="")
+        return self._json("POST" if create else "PUT", path,
+                          json={"task": task, "expected_revision": expected_revision})
+
+    def delete_discovery_task(self, name, expected_revision):
+        return self._json("DELETE", "/v1/discovery-tasks/" + quote(name, safe=""),
+                          params={"expected_revision": expected_revision})
+
+    def reorder_discovery_tasks(self, names, expected_revision):
+        return self._json("PUT", "/v1/discovery-tasks/order",
+                          json={"names": names, "expected_revision": expected_revision})
+
+    def tool_configuration(self, role, tool):
+        return self._json("GET", self._tool_path(role, tool))
+
+    def configure_tool(self, role, tool, settings, expected_revision=None):
+        return self._json(
+            "PUT",
+            self._tool_path(role, tool),
+            json={"settings": settings, "expected_revision": expected_revision},
+        )
+
+    def test_tool_configuration(self, role, tool, parameters):
+        return self._json("POST", self._tool_path(role, tool) + "/test", json=parameters)
+
+    def reset_tool_configuration(self, role, tool, expected_revision=None):
+        return self._json(
+            "DELETE",
+            self._tool_path(role, tool),
+            params={"expected_revision": expected_revision}
+            if expected_revision is not None
+            else {},
+        )
+
+    @staticmethod
+    def _tool_path(role, tool):
+        if role == "global":
+            return f"/v1/tool-configurations/{quote(tool, safe='')}"
+        return f"/v1/agents/{quote(role, safe='')}/tool-configurations/{quote(tool, safe='')}"
 
     def upload(self, session_id, path, stream):
         return self._json(

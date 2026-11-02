@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type ModelSummary } from "@/lib/client";
-import { AccountForm, AdminPanel } from "@/components/accounts";
+import { AccountForm } from "@/components/accounts";
 import { ModelManager } from "@/components/models";
 import { ResearchWorkspace } from "@/components/research/workspace";
 export default function Page() {
@@ -9,8 +9,7 @@ export default function Page() {
     [ready, setReady] = useState(false),
     [models, setModels] = useState<ModelSummary[]>([]),
     [error, setError] = useState(""),
-    [management, setManagement] = useState(false),
-    [tab, setTab] = useState("models");
+    [management, setManagement] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     api("auth/me")
@@ -28,6 +27,10 @@ export default function Page() {
     setManagement(true);
     dialog.current?.showModal();
     refresh().catch((e) => setError(String(e)));
+  }
+  function openSettings() {
+    if (user?.role === "admin") location.assign("/admin");
+    else manage();
   }
   if (!ready)
     return (
@@ -63,7 +66,11 @@ export default function Page() {
     );
   return (
     <>
-      <ResearchWorkspace manage={manage} />
+      <ResearchWorkspace
+        manage={manage}
+        openSettings={openSettings}
+        username={user.username}
+      />
       <dialog
         ref={dialog}
         className="account-dialog"
@@ -86,11 +93,23 @@ export default function Page() {
               ×
             </button>
             <nav aria-label="Account settings">
-              <button onClick={() => setTab("models")}>
-                模型配置 / Models
-              </button>
+              <button>模型配置 / Models</button>
+              <a href="/tools" target="_blank" rel="noopener noreferrer">
+                工具配置 / Tools
+              </a>
               {user.role === "admin" && (
-                <button onClick={() => setTab("admin")}>管理 / Admin</button>
+                <a
+                  href="/admin/discovery-tasks"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  样例任务 / Sample tasks
+                </a>
+              )}
+              {user.role === "admin" && (
+                <a href="/admin" target="_blank" rel="noopener noreferrer">
+                  管理 / Admin
+                </a>
               )}
               <span>{user.username}</span>
               <button
@@ -103,15 +122,11 @@ export default function Page() {
               </button>
             </nav>
             {error && <p role="alert">{error}</p>}
-            {tab === "models" ? (
-              <ModelManager
-                models={models}
-                admin={user.role === "admin"}
-                refresh={refresh}
-              />
-            ) : (
-              <AdminPanel />
-            )}
+            <ModelManager
+              models={models}
+              admin={user.role === "admin"}
+              refresh={refresh}
+            />
           </div>
         )}
       </dialog>

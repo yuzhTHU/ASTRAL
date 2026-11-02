@@ -20,8 +20,14 @@ export async function harness(
     if (!response.ok) {
       // Internal errors may contain provider responses; never reflect arbitrary bodies.
       const status = response.status;
-      if (status === 409) {
+      if (status === 409 || status === 422 || status === 404) {
         const error = await response.json().catch(() => null);
+        if (
+          typeof error?.error?.code === "string" &&
+          (error.error.code.startsWith("tool_config_") ||
+            error.error.code.startsWith("discovery_"))
+        )
+          throw new ApiError(status, String(error.error.message));
         if (error?.error?.code === "context_data_missing")
           throw new ApiError(
             409,

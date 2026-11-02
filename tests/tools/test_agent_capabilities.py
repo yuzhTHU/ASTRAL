@@ -141,16 +141,26 @@ def test_web_search_callback_is_bounded():
     assert len(result["results"]) == 3
 
 
-def test_web_fetch_rejects_private_network_addresses(monkeypatch):
+@pytest.mark.parametrize("proxy_mode", ["direct", "custom"])
+def test_web_fetch_rejects_private_network_addresses(monkeypatch, proxy_mode):
     monkeypatch.setattr(
         "sr_harness.tools.web_research.socket.getaddrinfo",
         lambda *args, **kwargs: [(2, 1, 6, "", ("127.0.0.1", 80))],
     )
+    settings = {"proxy_mode": proxy_mode}
+    if proxy_mode == "custom":
+        settings["proxy_url"] = "http://127.0.0.1:6789"
+    context = AgentContext(
+        args=argparse.Namespace(tool_configurations={"search:web_fetch": {"settings": settings}})
+    )
     with pytest.raises(ValueError, match="public network"):
-        WebFetchTool().execute("http://example.test/private")
+        WebFetchTool(context=context).execute("http://example.test/private")
+    for url in ["http://127.0.0.1/private", "http://[::1]/private"]:
+        with pytest.raises(ValueError, match="public network"):
+            WebFetchTool(context=context).execute(url)
 
 
-def test_web_fetch_accepts_mixed_proxy_dns_but_not_mixed_direct_dns(monkeypatch):
+def test_web_fetch_direct_mode_rejects_mixed_dns(monkeypatch):
     addresses = [
         (2, 1, 6, "", ("93.184.216.34", 443)),
         (10, 1, 6, "", ("2001::1", 443, 0, 0)),
@@ -161,32 +171,6 @@ def test_web_fetch_accepts_mixed_proxy_dns_but_not_mixed_direct_dns(monkeypatch)
     )
     with pytest.raises(ValueError, match="public network"):
         WebFetchTool().execute("https://example.test/page")
-
-    class Response:
-        is_redirect = False
-        status_code = 200
-        headers = {"content-type": "text/html; charset=utf-8"}
-        encoding = "utf-8"
-
-        def raise_for_status(self):
-            return None
-
-        def iter_content(self, size):
-            yield b"<html><body>Public page</body></html>"
-
-    monkeypatch.setattr(
-        "sr_harness.tools.web_research.requests.get",
-        lambda *args, **kwargs: Response(),
-    )
-    proxied_tool = WebFetchTool(
-        context=AgentContext(
-            args=argparse.Namespace(
-                api_environment={"HTTPS_PROXY": "http://127.0.0.1:6789"}
-            )
-        )
-    )
-    result = proxied_tool.execute("https://example.test/page")
-    assert result["text"] == "Public page"
 
 
 def test_web_fetch_reports_automated_access_blocks(monkeypatch):
@@ -205,7 +189,7 @@ def test_web_fetch_reports_automated_access_blocks(monkeypatch):
 
     response = Response()
     monkeypatch.setattr(
-        "sr_harness.tools.web_research.requests.get",
+        "sr_harness.runtime.tool_http.requests.Session.request",
         lambda *args, **kwargs: response,
     )
     result = WebFetchTool().execute("https://example.test/protected")

@@ -69,6 +69,7 @@ export function PlatformMarkup() {
         >
           {"\n    EN"}
         </button>
+        <span id="header-user-menu-slot"></span>
         <span id={"status"}>{"连接中"}</span>
       </header>
       <div
