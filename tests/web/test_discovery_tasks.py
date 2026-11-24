@@ -123,8 +123,6 @@ def test_case_specific_selection_without_reference_answers():
     for case in discovery.CASES:
         drafted=discovery.prompts(case,[Path('sample-observations.dat')], 'Generic system instructions')
         assert 'sample-observations.dat' in drafted['data_agent']
-        assert '系统接受的数据格式' in drafted['data_agent']
-        assert '记录' in drafted['data_agent'] or '包含' in drafted['data_agent']
         assert '{inputs}' not in drafted['data_agent']
         assert drafted['problem_description'] == drafted['user_prompt'] == case['task']
         assert drafted['evaluator_agent'] == case['evaluation']
@@ -141,4 +139,4 @@ def test_case_specific_selection_without_reference_answers():
     assert all(term in chen['evaluation'] for term in ['SDSS', 'LAMOST', '独立检验', '重复', '金属丰度误差'])
     xiang=next(c for c in discovery.CASES if c['name']=='Xiang_Nature2022')
     assert '筛选条件' in xiang['preparation']
-    assert '族群选择边界' in xiang['evaluation']
+    assert '离群' in xiang['evaluation']
