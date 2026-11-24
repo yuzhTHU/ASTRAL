@@ -51,7 +51,7 @@ def test_readonly_and_prompts(setup):
     assert all(data['prompts'].values())
     assert '-173' not in str(data['prompts'])
     assert '0.745' not in str(data['prompts'])
-    assert '构建' in data['prompts']['evaluator_agent']
+    assert '检验' in data['prompts']['evaluator_agent']
     assert client.post('/api/data/discovery-tasks/load', json={'name':'Chen_NatureAstronomy2023'}).status_code == 200
 
 def test_invalid_unavailable_busy_collision(setup):
@@ -136,7 +136,10 @@ def test_case_specific_selection_without_reference_answers():
         for term in ['训练', '验证', '评分', 'SDSS', 'LAMOST']:
             assert term not in drafted['problem_description'], (case['name'], term)
     chen=next(c for c in discovery.CASES if c['name']=='Chen_NatureAstronomy2023')
-    assert all(term in chen['evaluation'] for term in ['SDSS', 'LAMOST', '独立检验', '重复', '金属丰度误差'])
+    # The protocol survives the short prompts: LAMOST is set aside by data preparation, the
+    # evaluator weights by the quoted errors and holds out stars for validation.
+    assert all(term in chen['preparation'] for term in ['SDSS', 'LAMOST', '独立检验', '不重复'])
+    assert all(term in chen['evaluation'] for term in ['误差', '固有弥散', '检验'])
     xiang=next(c for c in discovery.CASES if c['name']=='Xiang_Nature2022')
     assert '筛选条件' in xiang['preparation']
     assert '离群' in xiang['evaluation']

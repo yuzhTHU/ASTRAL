@@ -19,9 +19,8 @@ CASES = [{'topic': 'Gaia',
   'description_en': 'This study uses the two pulsation periods of double-mode RR Lyrae stars to estimate '
                     'their metallicity and distance. This example focuses on metallicity measured by the '
                     'SDSS and LAMOST spectroscopic surveys; the distance calibration also uses Gaia.',
-  'preparation': '观测表 {inputs} 中记录了具有两种脉动周期的 RR Lyrae 变星的周期、光谱金属丰度和天空位置，SDSS、LAMOST 标明观测来源。将它整理为系统接受的数据格式。每行一颗恒星。保留两种脉动周期、金属丰度及其误差、天空位置和巡天来源。统一并注明单位。标记并注明同一天体的重复记录和缺失值。',
-  'evaluation': '构建用周期估计金属丰度的评测器。只用 SDSS 数据进行开发，按天体分成训练和验证集；LAMOST 作为最终独立检验，排除与 SDSS '
-                '重复的天体，不用于拟合或选择候选。按金属丰度误差评分，并检查是否需要额外散布；额外散布只在训练集估计并固定。保存并测试评测器，说明训练、验证、独立检验的样本数及排序指标。'},
+  'preparation': '{inputs} 是双模 RR Lyrae 的两个脉动周期（基频 P_F、第一泛音 P_1O）、周期比和光谱 [Fe/H]，来自 SDSS 和 LAMOST 两个巡天。帮我整理一下：单位照表头，[Fe/H] 的误差单独一列。同一颗星在两个巡天里都有的要标出来。分析表只放 SDSS 的星；LAMOST 里和 SDSS 不重复的星另存一份，留作最后的独立检验，别放进分析表。',
+  'evaluation': '我想用两个脉动周期估 [Fe/H]，两个周期都要能用上。[Fe/H] 按它的误差加权，再留一个固有弥散。随机留 30% 的星做检验。'},
  {'topic': 'Gaia',
   'name': 'Xiang_Nature2022',
   'title': 'A time-resolved picture of our Milky Way’s early formation history',
@@ -35,7 +34,7 @@ CASES = [{'topic': 'Gaia',
   'description_en': 'This study reconstructs the early Milky Way using stellar ages, chemical abundances and '
                     'orbits. The narrow age–metallicity sequence belongs to a particular disc population, '
                     'and the catalogue ages are model estimates.',
-  'preparation': '{inputs} 是 LAMOST 和 Gaia 的 24.7 万颗亚巨星，年龄是拿等年龄线估的。帮我整理一下：-9999 和 NaN 当缺失，单位照表头。只用年龄相对误差小于 15% 的星。再按 [α/Fe] 和轨道挑出早期的高 α 厚盘，别拿年龄和 [Fe/H] 来挑，这俩是要研究的量。写清楚筛选条件和每一步剩多少颗。分析表里只放这群星，其他星另存一份做对照。',
+  'preparation': '{inputs} 是 LAMOST 和 Gaia 的 24.7 万颗亚巨星，年龄是拿等年龄线估的。帮我整理一下：-9999 和 NaN 当缺失，单位照表头。只用年龄相对误差小于 15% 的星。再按 [α/Fe] 和轨道挑出早期的高 α 厚盘，[Fe/H] 只留厚盘序列那一段，别拿年龄来挑，它是要研究的量。写清楚筛选条件和每一步剩多少颗。分析表里只放这群星，其他星另存一份做对照。',
   'evaluation': '我想看这群星的年龄怎么随 [Fe/H] 变。年龄按它的误差加权，再留一个固有弥散。样本里会混进蓝离散星，留一个离群成分。随机留 30% 的星做检验。'},
  {'topic': 'Gaia',
   'name': 'Li_Nature2023',
