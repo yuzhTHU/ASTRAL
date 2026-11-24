@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 
 async function register(page: any) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Register / 注册账号" }).click();
+  await page.getByRole("button", { name: "注册账号" }).click();
   await page
     .getByLabel("用户名", { exact: true })
     .fill(`researcher-${Date.now()}`);
@@ -27,17 +27,18 @@ test("original workflow: models, uploads, agents, evaluator, search, tree, sessi
   });
   await register(page);
   await page.locator("#account-settings").click();
-  await page.getByLabel("Name / 名称").fill("Local model");
-  await page.getByLabel("Provider / 供应商").selectOption("compatible");
-  await page.getByLabel("Model / 模型").fill("test-model");
-  await page
-    .getByLabel("Endpoint", { exact: true })
+  const settings = page.getByRole("dialog");
+  await settings.getByLabel("名称").fill("Local model");
+  await settings.getByLabel("供应商").selectOption("compatible");
+  await settings.getByLabel("模型", { exact: true }).fill("test-model");
+  await settings
+    .getByLabel("端点地址", { exact: true })
     .fill("http://model.test/v1");
-  await page.getByLabel("API Key", { exact: true }).fill("test-key");
-  await page.getByLabel("Default / 默认").check();
-  await page.getByRole("button", { name: "Save / 保存", exact: true }).click();
-  await expect(page.getByRole("status")).toHaveText("Saved / 已保存");
-  await page.getByRole("button", { name: "Close account settings" }).click();
+  await settings.getByLabel("API 密钥", { exact: true }).fill("test-key");
+  await settings.getByLabel("默认配置").check();
+  await settings.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(settings.getByRole("status")).toHaveText("已保存");
+  await settings.getByRole("button", { name: "关闭账号设置" }).click();
   await page.locator("#data-agent-settings-toggle").click();
   await expect(page.locator("#data-model-profile")).toBeVisible();
   expect(reloads).toEqual([]);
@@ -93,7 +94,35 @@ test("original workflow: models, uploads, agents, evaluator, search, tree, sessi
   await page.locator("#left-resizer .panel-toggle").click();
   await page.locator("#theme-toggle").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.locator("#language-toggle").click();
+  const tree = page.frameLocator("#tree");
+  await expect(tree.locator("#graph .node").first()).toBeAttached();
+  // Read both documents in the click task, before a timer, poll or navigation can run.
+  const translated = await page
+    .locator("#language-toggle")
+    .evaluate((button) => {
+      const frame = document.querySelector<HTMLIFrameElement>("#tree")!;
+      const before = frame.contentDocument!;
+      (button as HTMLButtonElement).click();
+      return {
+        sameDocument: frame.contentDocument === before,
+        language: before.documentElement.lang,
+        viewer: before.getElementById("refresh")!.textContent,
+        title: frame.title,
+        account: document
+          .querySelector(".user-account-trigger")
+          ?.getAttribute("aria-label")
+          ?.startsWith("User menu:"),
+        tab: document.getElementById("prepare-tab")!.textContent,
+      };
+    });
+  expect(translated).toEqual({
+    sameDocument: true,
+    language: "en",
+    viewer: "Refresh",
+    title: "Agent search tree",
+    account: true,
+    tab: "Data Preparation",
+  });
   await expect(page.locator("#prepare-tab")).toHaveText("Data Preparation");
   await page.screenshot({
     path: info.outputPath("restored-workbench-dark.png"),

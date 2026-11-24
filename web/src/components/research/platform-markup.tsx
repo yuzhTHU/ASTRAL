@@ -379,6 +379,7 @@ export function PlatformMarkup() {
                             <span id={"data-provider-label"}>{"Provider"}</span>
                             <select
                               id={"data-provider"}
+                              data-aria-key="dataAgentProvider"
                               aria-label={"Provider"}
                             >
                               <option>{"openrouter"}</option>
@@ -393,6 +394,7 @@ export function PlatformMarkup() {
                             <span id={"data-model-label"}>{"Model"}</span>
                             <input
                               id={"data-model"}
+                              data-aria-key="dataAgentModel"
                               aria-label={"Model"}
                               placeholder={"Model"}
                             />
@@ -677,6 +679,7 @@ export function PlatformMarkup() {
             </div>
             <textarea
               id={"prompt"}
+              data-aria-key="userPrompt"
               aria-label={"用户提示词"}
               placeholder={"等待根据任务配置生成用户提示词…"}
               defaultValue={""}
@@ -761,6 +764,7 @@ export function PlatformMarkup() {
                 <textarea
                   id={"system-prompt"}
                   className={"prompt-editor"}
+                  data-aria-key="systemPrompt"
                   aria-label={"System Prompt"}
                   defaultValue={""}
                 ></textarea>
@@ -787,7 +791,11 @@ export function PlatformMarkup() {
                   {"\n            ×\n          "}
                 </button>
               </div>
-              <nav className={"settings-tabs"} aria-label={"设置分类"}>
+              <nav
+                className={"settings-tabs"}
+                data-aria-key="settingsSections"
+                aria-label={"设置分类"}
+              >
                 <button
                   id={"settings-tab-model"}
                   className={"active"}
@@ -1091,6 +1099,7 @@ export function PlatformMarkup() {
               <div
                 className={"candidate-mode"}
                 role={"group"}
+                data-aria-key="candidateScope"
                 aria-label={"候选公式范围"}
               >
                 <button
@@ -1233,7 +1242,15 @@ export function PlatformMarkup() {
           </div>
         </aside>
       </main>
-      <dialog id={"preview"}>
+      <dialog id="delete-file-dialog" aria-labelledby="delete-file-message">
+        <p id="delete-file-message" />
+        <form method="dialog" className="row">
+          <span className="spacer" />
+          <button id="cancel-delete-file" value="cancel" />
+          <button id="confirm-delete-file" value="delete" />
+        </form>
+      </dialog>
+      <dialog id={"preview"} aria-labelledby="preview-title">
         <div className={"row"}>
           <b id={"preview-title"}></b>
           <span className={"spacer"}></span>
@@ -1242,7 +1259,11 @@ export function PlatformMarkup() {
         <div id={"preview-meta"} className={"preview-meta"}></div>
         <pre id={"preview-text"}></pre>
       </dialog>
-      <dialog id={"demo-picker"} className={"demo-picker"}>
+      <dialog
+        id={"demo-picker"}
+        className={"demo-picker"}
+        aria-labelledby="demo-picker-title"
+      >
         <div className={"demo-picker-header"}>
           <div>
             <h3 id={"demo-picker-title"}>{"选择样例数据"}</h3>

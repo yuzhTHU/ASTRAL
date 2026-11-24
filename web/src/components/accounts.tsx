@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedForm } from "./localized-form";
+import { localizedError } from "./ui-language";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/client";
 export function AccountForm({
@@ -31,7 +33,7 @@ export function AccountForm({
           ? "Human–AI interactive astronomy discovery"
           : "人机交互天文发现平台"}
       </p>
-      <form
+      <LocalizedForm
         onSubmit={async (e) => {
           e.preventDefault();
           setBusy(true);
@@ -84,7 +86,7 @@ export function AccountForm({
         </label>
         {register && mode === "invite" && (
           <label>
-            Invitation / 邀请码
+            {en ? "Invitation code" : "邀请码"}
             <input
               required
               value={invitation}
@@ -105,7 +107,7 @@ export function AccountForm({
         </button>
         {error && (
           <p role="alert" className="error">
-            {error}
+            {localizedError(error, en ? "en" : "zh")}
           </p>
         )}
         {mode !== "admin" && (
@@ -114,10 +116,16 @@ export function AccountForm({
             className="link"
             onClick={() => setRegister(!register)}
           >
-            {register ? "Sign in / 已有账号" : "Register / 注册账号"}
+            {register
+              ? en
+                ? "Sign in"
+                : "已有账号"
+              : en
+                ? "Register"
+                : "注册账号"}
           </button>
         )}
-      </form>
+      </LocalizedForm>
     </main>
   );
 }

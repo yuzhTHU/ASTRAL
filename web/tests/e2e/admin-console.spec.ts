@@ -37,20 +37,35 @@ test("Ant Design administration manages accounts, registration and shared models
   await expect(page.locator("html")).toHaveClass(/ui-ready/);
   await page.locator("#account-settings").click();
   await expect(page).toHaveURL("http://localhost:3100/admin");
-  await expect(
-    page.getByRole("heading", { name: "账号与注册 / Accounts" }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "创建用户 / Create user" }).click();
+  await expect(page.getByRole("heading", { name: "账号与注册" })).toBeVisible();
+  await page.getByRole("button", { name: "创建用户" }).click();
   const ordinaryName = `console-user-${stamp}`;
-  await page.getByLabel("New username").fill(ordinaryName);
-  await page.getByLabel("New user password").fill(password);
-  await page
-    .getByRole("button", { name: "创建 / Create", exact: true })
-    .click();
-  await expect(page.getByRole("status")).toHaveText("已保存 / Saved");
-  await page.getByLabel("Search users").fill(ordinaryName);
+  await page.getByLabel("新建用户名").fill(ordinaryName);
+  // The workbench remains open in a second tab while administration is active.
+  const workbench = await page.context().newPage();
+  await workbench.goto("/");
+  const language = workbench.locator(
+    "html.ui-ready .research-workbench header button#language-toggle",
+  );
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page.getByText("请输入至少 12 个字符的密码")).toBeVisible();
+  await language.click();
+  await expect(
+    page.getByText("Enter a password of at least 12 characters."),
+  ).toBeVisible();
+  await expect(page.getByLabel("New username")).toHaveValue(ordinaryName);
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Close", exact: true }),
+  ).toBeVisible();
+  await language.click();
+  await page.getByLabel("新用户密码").fill(password);
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(page.getByRole("status")).toHaveText("已保存");
+  await page.getByLabel("搜索用户").fill(ordinaryName);
   const row = page.getByRole("row").filter({ hasText: ordinaryName });
-  await expect(row).toContainText("正常 / Active");
+  await expect(row).toContainText("正常");
   const ordinary = await browser.newContext();
   expect(
     (
@@ -60,27 +75,27 @@ test("Ant Design administration manages accounts, registration and shared models
       })
     ).ok(),
   ).toBeTruthy();
-  await row
-    .getByRole("button", { name: "禁用 / Disable", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "确认 / Confirm", exact: true })
-    .click();
-  await expect(row).toContainText("已禁用 / Disabled");
+  await row.getByRole("button", { name: "禁用", exact: true }).click();
+  await language.click();
+  await expect(page.getByRole("dialog")).toContainText("Disable account?");
+  await expect(
+    page.getByRole("button", { name: "Confirm", exact: true }),
+  ).toBeVisible();
+  await language.click();
+  await expect(page.getByRole("dialog")).toContainText("禁用此账号？");
+  await workbench.close();
+  await page.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(row).toContainText("已禁用");
   expect((await ordinary.request.get(origin + "/api/auth/me")).status()).toBe(
     401,
   );
-  await row.getByRole("button", { name: "启用 / Enable", exact: true }).click();
-  await page
-    .getByRole("button", { name: "确认 / Confirm", exact: true })
-    .click();
-  await expect(row).toContainText("正常 / Active");
-  await row.getByRole("button", { name: "重置密码 / Reset password" }).click();
+  await row.getByRole("button", { name: "启用", exact: true }).click();
+  await page.getByRole("button", { name: "确认", exact: true }).click();
+  await expect(row).toContainText("正常");
+  await row.getByRole("button", { name: "重置密码" }).click();
   const nextPassword = "new-console-password-123456";
-  await page.getByLabel("Reset password", { exact: true }).fill(nextPassword);
-  await page
-    .getByRole("button", { name: "更新密码 / Update password" })
-    .click();
+  await page.getByLabel("重置密码", { exact: true }).fill(nextPassword);
+  await page.getByRole("button", { name: "更新密码" }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   expect(
     (
@@ -91,19 +106,15 @@ test("Ant Design administration manages accounts, registration and shared models
     ).ok(),
   ).toBeTruthy();
   try {
-    await page.getByLabel("Registration mode").click();
-    await page
-      .getByRole("option", { name: "邀请注册 / Invitation only", exact: true })
-      .click();
+    await page.getByLabel("注册策略").click();
+    await page.getByRole("option", { name: "邀请注册", exact: true }).click();
     await expect
       .poll(
         async () =>
           (await (await page.request.get("/api/auth/mode")).json()).mode,
       )
       .toBe("invite");
-    await page
-      .getByRole("button", { name: "创建邀请 / Create invitation" })
-      .click();
+    await page.getByRole("button", { name: "创建邀请" }).click();
     await expect(
       page.getByText("邀请链接 · 一次性使用，七天后过期"),
     ).toBeVisible();
@@ -116,29 +127,29 @@ test("Ant Design administration manages accounts, registration and shared models
       data: { mode: "open" },
     });
   }
-  await page.getByLabel("Search users").clear();
+  await page.getByLabel("搜索用户").clear();
   await page.screenshot({
     path: info.outputPath("admin-accounts.png"),
     fullPage: true,
     animations: "disabled",
   });
   await page
-    .getByRole("link", { name: "共享模型 / Models", exact: true })
+    .getByRole("link", { name: "共享模型", exact: true })
     .first()
     .click();
-  await page.getByRole("button", { name: "添加共享模型 / Add model" }).click();
+  await page.getByRole("button", { name: "添加共享模型" }).click();
   const modelName = `Shared model ${stamp}`,
     secret = "test-key-never-reflected";
-  await page.getByLabel("Model configuration name").fill(modelName);
-  await page.getByLabel("Model identifier").fill("test-model");
-  await page.getByLabel("Model endpoint").fill("https://models.test/v1");
-  await page.getByLabel("Model API key").fill(secret);
-  await page.getByRole("button", { name: "保存模型 / Save model" }).click();
-  await expect(page.getByRole("status")).toHaveText("已保存 / Saved");
+  await page.getByLabel("模型配置名称").fill(modelName);
+  await page.getByLabel("模型标识").fill("test-model");
+  await page.getByLabel("模型端点地址").fill("https://models.test/v1");
+  await page.getByLabel("模型 API 密钥").fill(secret);
+  await page.getByRole("button", { name: "保存模型" }).click();
+  await expect(page.getByRole("status")).toHaveText("已保存");
   await page.getByRole("button", { name: modelName, exact: true }).click();
-  await expect(page.getByLabel("Model API key")).toHaveValue("");
-  await page.getByLabel("Model configuration name").fill(modelName + " edited");
-  await page.getByRole("button", { name: "保存模型 / Save model" }).click();
+  await expect(page.getByLabel("模型 API 密钥")).toHaveValue("");
+  await page.getByLabel("模型配置名称").fill(modelName + " edited");
+  await page.getByRole("button", { name: "保存模型" }).click();
   await expect(
     page.getByRole("button", { name: modelName + " edited", exact: true }),
   ).toBeVisible();
@@ -160,24 +171,16 @@ test("Ant Design administration manages accounts, registration and shared models
   ).toBe(404);
   const userPage = await ordinary.newPage();
   await userPage.goto(origin + "/admin/models");
-  await expect(
-    userPage.getByText("仅管理员可访问 / Administrators only"),
-  ).toBeVisible();
+  await expect(userPage.getByText("仅管理员可访问")).toBeVisible();
   const modelRow = page
     .getByRole("row")
     .filter({ hasText: modelName + " edited" });
-  await modelRow
-    .getByRole("button", { name: "删除 / Delete", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "确认删除 / Delete", exact: true })
-    .click();
+  await modelRow.getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByRole("button", { name: "确认删除", exact: true }).click();
   await expect(modelRow).toHaveCount(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin/discovery-tasks");
-  await expect(
-    page.getByRole("heading", { name: "样例任务 / Sample tasks" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "样例任务" })).toBeVisible();
   await page.screenshot({
     path: info.outputPath("admin-mobile.png"),
     fullPage: true,
@@ -185,13 +188,11 @@ test("Ant Design administration manages accounts, registration and shared models
   });
   await page
     .getByRole("button", {
-      name: `用户菜单 / User menu: ${username}`,
+      name: `用户菜单：${username}`,
       exact: true,
     })
     .click();
-  await page
-    .getByRole("menuitem", { name: "退出登录 / Logout", exact: true })
-    .click();
+  await page.getByRole("menuitem", { name: "退出登录", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "登录", exact: true }),
   ).toBeVisible();

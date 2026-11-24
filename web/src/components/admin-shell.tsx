@@ -1,4 +1,7 @@
 "use client";
+import { LanguageButton } from "./language-button";
+import { localizedError, useUiLanguage } from "./ui-language";
+import { useManagementText } from "./management-text";
 
 import {
   Alert,
@@ -27,6 +30,8 @@ import { ManagementSurface } from "./management-surface";
 import { UserAccountMenu } from "./user-account-menu";
 
 export function AdminShell({ children }: { children: ReactNode }) {
+  const t = useManagementText();
+  const lang = useUiLanguage();
   const path = usePathname();
   const [identity, setIdentity] = useState<{
     username: string;
@@ -42,44 +47,54 @@ export function AdminShell({ children }: { children: ReactNode }) {
     {
       key: "/admin",
       icon: <TeamOutlined aria-hidden />,
-      label: <Link href="/admin">账号与注册 / Accounts</Link>,
+      label: <Link href="/admin">{t("账号与注册", "Accounts")}</Link>,
     },
     {
       key: "/admin/discovery-tasks",
       icon: <ExperimentOutlined aria-hidden />,
-      label: <Link href="/admin/discovery-tasks">样例任务 / Samples</Link>,
+      label: (
+        <Link href="/admin/discovery-tasks">{t("样例任务", "Samples")}</Link>
+      ),
     },
     {
       key: "/admin/models",
       icon: <ApiOutlined aria-hidden />,
-      label: <Link href="/admin/models">共享模型 / Models</Link>,
+      label: <Link href="/admin/models">{t("共享模型", "Models")}</Link>,
     },
     {
       key: "/admin/tools",
       icon: <ToolOutlined aria-hidden />,
-      label: <Link href="/admin/tools">工具配置 / Tools</Link>,
+      label: <Link href="/admin/tools">{t("工具配置", "Tools")}</Link>,
     },
   ];
   return (
     <ManagementSurface>
       {!identity ? (
         <div className="admin-loading">
+          <LanguageButton />
           {failure ? (
             <Alert
               type="error"
               showIcon
-              title={failure}
-              description={<a href="/">返回登录 / Sign in</a>}
+              title={localizedError(failure, lang)}
+              description={<a href="/">{t("返回登录", "Sign in")}</a>}
             />
           ) : (
-            <Spin description="正在加载管理控制台…" />
+            <Spin
+              description={t("正在加载管理控制台…", "Loading administration…")}
+            />
           )}
         </div>
       ) : identity.role !== "admin" ? (
         <Result
           status="403"
-          title="仅管理员可访问 / Administrators only"
-          extra={<Button href="/">返回工作台 / Workbench</Button>}
+          title={t("仅管理员可访问", "Administrators only")}
+          extra={
+            <Space>
+              <LanguageButton />
+              <Button href="/">{t("返回工作台", "Workbench")}</Button>
+            </Space>
+          }
         />
       ) : (
         <Layout className="admin-layout">
@@ -87,7 +102,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
             <Link href="/admin" className="admin-brand">
               <span className="admin-brand-mark">A</span>
               <span>
-                ASTRAL <small>管理控制台 / Administration</small>
+                ASTRAL <small>{t("管理控制台", "Administration")}</small>
               </span>
             </Link>
             <Space size="middle">
@@ -95,11 +110,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 icon={<SafetyCertificateOutlined aria-hidden />}
                 color="blue"
               >
-                管理员
+                {t("管理员", "Administrator")}
               </Tag>
+              <LanguageButton />
               <UserAccountMenu username={identity.username} />
               <Button icon={<ArrowLeftOutlined aria-hidden />} href="/">
-                返回工作台
+                {t("返回工作台", "Back to workbench")}
               </Button>
             </Space>
           </Layout.Header>
@@ -111,10 +127,12 @@ export function AdminShell({ children }: { children: ReactNode }) {
               collapsedWidth={0}
             >
               <Typography.Text type="secondary" className="admin-nav-caption">
-                平台管理 / PLATFORM
+                {t("平台管理", "PLATFORM")}
               </Typography.Text>
               <Menu mode="inline" selectedKeys={[path]} items={items} />
-              <div className="admin-sidebar-note">ASTRAL · 科研平台</div>
+              <div className="admin-sidebar-note">
+                {t("ASTRAL · 科研平台", "ASTRAL · Research platform")}
+              </div>
             </Layout.Sider>
             <Layout.Content className="admin-content">
               <nav className="admin-mobile-nav">

@@ -1,6 +1,11 @@
 // @ts-nocheck
 // Original search viewer layout, navigation, detail, and export behavior.
 import katex from "katex";
+import {
+  getUiLanguage,
+  subscribeUiLanguage,
+  localizedError,
+} from "../ui-language";
 import { researchRuntime } from "./runtime";
 import { researchTransport } from "./transport";
 export function mountTree(root: HTMLElement) {
@@ -14,6 +19,45 @@ export function mountTree(root: HTMLElement) {
     ResizeObserver,
     IntersectionObserver,
   } = runtime;
+  let language = getUiLanguage();
+  const t = (en, zh) => (language === "en" ? en : zh);
+  // Only mark UI-owned labels. Bindings follow the element lifetime and never
+  // require rebuilding a graph, dropping an edit or collapsing an open detail.
+  const bindings = new WeakMap();
+  function writeLabel(element, attribute, value) {
+    if (attribute) element.setAttribute(attribute, value);
+    else element.textContent = value;
+  }
+  function bindLabel(element, render, attribute = "") {
+    let fields = bindings.get(element);
+    if (typeof render === "function") {
+      if (!fields) {
+        fields = new Map();
+        bindings.set(element, fields);
+      }
+      fields.set(attribute, render);
+      element.setAttribute("data-tree-bound", "");
+      writeLabel(element, attribute, render());
+    } else {
+      fields?.delete(attribute);
+      if (!fields?.size) element.removeAttribute("data-tree-bound");
+      writeLabel(element, attribute, render);
+    }
+  }
+  for (const element of root.querySelectorAll("[data-tree-zh]")) {
+    const { treeEn, treeZh, treeAttribute } = element.dataset;
+    bindLabel(element, () => t(treeEn, treeZh), treeAttribute);
+  }
+  const viewerTitle = () => t("ASTRAL Search Viewer", "ASTRAL 搜索树查看器");
+  document.title = viewerTitle();
+  const unsubscribeLanguage = subscribeUiLanguage((next) => {
+    language = next;
+    document.title = viewerTitle();
+    for (const element of root.querySelectorAll("[data-tree-bound]")) {
+      for (const [attribute, render] of bindings.get(element) || [])
+        writeLabel(element, attribute, render());
+    }
+  });
   const transport = researchTransport(
     runtime.signal,
     new URLSearchParams(location.search).get("conversation") || undefined,
@@ -117,6 +161,21 @@ export function mountTree(root: HTMLElement) {
     runs: [],
     collapsedRunNodes: new Set(),
   };
+  function updateEdgeButton() {
+    bindLabel(weakEdgesButton, () =>
+      state.showWeakEdges
+        ? t("Hide Weak Edges", "隐藏弱连接")
+        : t("Show Weak Edges", "显示弱连接"),
+    );
+  }
+  function updateLabelsButton() {
+    bindLabel(labelsButton, () =>
+      state.showLabels
+        ? t("Hide Labels", "隐藏标签")
+        : t("Show Labels", "显示标签"),
+    );
+  }
+  bindLabel(sideResizer, () => t("Details", "详情"), "data-details-label");
   const mathJaxReady = new Promise((resolve) => {
     const wait = () => {
       if (typeof MathJax.typesetPromise === "function") resolve();
@@ -135,14 +194,12 @@ export function mountTree(root: HTMLElement) {
   });
   weakEdgesButton.addEventListener("click", () => {
     state.showWeakEdges = !state.showWeakEdges;
-    weakEdgesButton.textContent = state.showWeakEdges
-      ? "Hide Weak Edges"
-      : "Show Weak Edges";
+    updateEdgeButton();
     renderGraph();
   });
   labelsButton.addEventListener("click", () => {
     state.showLabels = !state.showLabels;
-    labelsButton.textContent = state.showLabels ? "Hide Labels" : "Show Labels";
+    updateLabelsButton();
     renderGraph();
   });
   nodeSizeInput.addEventListener("input", () => {
@@ -202,9 +259,11 @@ export function mountTree(root: HTMLElement) {
   sideResizer.addEventListener("click", onSideResizerClick);
   formulaEditorToggle.addEventListener("click", () => {
     formulaEditor.classList.toggle("hidden");
-    formulaEditorToggle.textContent = formulaEditor.classList.contains("hidden")
-      ? "LaTeX editor"
-      : "Hide LaTeX editor";
+    bindLabel(formulaEditorToggle, () =>
+      formulaEditor.classList.contains("hidden")
+        ? t("LaTeX editor", "LaTeX 编辑器")
+        : t("Hide LaTeX editor", "收起 LaTeX 编辑器"),
+    );
     if (!formulaEditor.classList.contains("hidden")) latexSource.focus();
   });
   latexSource.addEventListener("input", () => {
@@ -227,11 +286,33 @@ export function mountTree(root: HTMLElement) {
   svg.addEventListener("wheel", onWheel, { passive: false });
 
   const viewerParams = new URLSearchParams(location.search);
-  function reportTree(message, key = null, values = {}) {
-    statusEl.textContent = message;
+  function reportTree(key, values = {}) {
+    bindLabel(statusEl, () => {
+      switch (key) {
+        case "treeLoading":
+          return t("Loading this run’s search tree…", "正在加载本次搜索树…");
+        case "treeAwaitingFirstNode":
+          return t(
+            "Search nodes will appear after the first round completes",
+            "等待第一轮完成后生成搜索节点",
+          );
+        case "treeSynced":
+          return t(
+            `${values.count} ${values.count === 1 ? "node" : "nodes"} · synced`,
+            `${values.count} 个节点 · 已同步`,
+          );
+        case "treeSyncFailed":
+          return t(
+            `Search-tree sync failed: ${values.message} · retrying`,
+            `搜索树同步失败：${localizedError(values.message, language)} · 自动重试`,
+          );
+        default:
+          return localizedError(values.message, language);
+      }
+    });
     if (viewerParams.has("embed"))
       parent.postMessage(
-        { type: "sr-tree-status", message, key, values },
+        { type: "sr-tree-status", message: statusEl.textContent, key, values },
         location.origin,
       );
   }
@@ -307,9 +388,12 @@ export function mountTree(root: HTMLElement) {
         if (requested || !viewerParams.has("run"))
           selectRun(runKey(requested || data.runs[0]));
       }
-      statusEl.textContent = data.runs.length
-        ? ""
-        : "No active run records yet";
+      bindLabel(
+        statusEl,
+        data.runs.length
+          ? ""
+          : () => t("No active run records yet", "暂无运行记录"),
+      );
     } finally {
       runListLoading = false;
     }
@@ -320,7 +404,7 @@ export function mountTree(root: HTMLElement) {
     if (!runs.length) {
       const empty = document.createElement("div");
       empty.className = "muted";
-      empty.textContent = "No active run records yet.";
+      bindLabel(empty, () => t("No active run records yet.", "暂无运行记录。"));
       runTree.appendChild(empty);
       return;
     }
@@ -443,17 +527,11 @@ export function mountTree(root: HTMLElement) {
     try {
       await loadRecords();
       reportTree(
-        state.records.size
-          ? `${state.records.size} 个节点 · 已同步`
-          : "等待第一轮完成后生成搜索节点",
         state.records.size ? "treeSynced" : "treeAwaitingFirstNode",
         state.records.size ? { count: state.records.size } : {},
       );
     } catch (error) {
       reportTree(
-        error.status === 404
-          ? "等待第一轮完成后生成搜索节点"
-          : `搜索树同步失败：${error.message} · 自动重试`,
         error.status === 404 ? "treeAwaitingFirstNode" : "treeSyncFailed",
         error.status === 404 ? {} : { message: error.message },
       );
@@ -485,7 +563,7 @@ export function mountTree(root: HTMLElement) {
       try {
         await loadRecords();
       } catch (error) {
-        statusEl.textContent = error.message;
+        bindLabel(statusEl, () => localizedError(error, language));
       } finally {
         if (!cancelled) setTimeout(tick, 1500);
       }
@@ -501,7 +579,12 @@ export function mountTree(root: HTMLElement) {
     enrichToolSummaries();
     state.positions = computeLayout(buildGraphNodes(), false);
     syncR2ColorControls();
-    statusEl.textContent = `${state.records.size} nodes`;
+    bindLabel(statusEl, () =>
+      t(
+        `${state.records.size} ${state.records.size === 1 ? "node" : "nodes"}`,
+        `${state.records.size} 个节点`,
+      ),
+    );
   }
 
   function enrichToolSummaries() {
@@ -764,10 +847,8 @@ export function mountTree(root: HTMLElement) {
           "class",
           `node-label ${node.virtual_root ? "root-label" : ""}`,
         );
-        label.textContent = node.virtual_root
-          ? `run ${shortTreeId(node.run_id)}`
-          : node.node_label ||
-            `R${node.coord.R} C${node.coord.C} L${node.coord.L} K${node.coord.K}`;
+        if (node.virtual_root) bindLabel(label, () => graphLabel(node));
+        else label.textContent = graphLabel(node);
         nodeGroup.appendChild(label);
       }
     }
@@ -1020,9 +1101,14 @@ export function mountTree(root: HTMLElement) {
   function setRunHidden(hidden) {
     state.runHidden = hidden;
     main.classList.toggle("run-hidden", hidden);
-    runResizer.title = hidden
-      ? "Click to show runs panel"
-      : "Drag to resize runs panel";
+    bindLabel(
+      runResizer,
+      () =>
+        hidden
+          ? t("Click to show runs panel", "点击展开运行记录面板")
+          : t("Drag to resize runs panel", "拖动以调整运行记录面板大小"),
+      "title",
+    );
     applyPanelLayout();
   }
 
@@ -1123,9 +1209,14 @@ export function mountTree(root: HTMLElement) {
   function setSideHidden(hidden) {
     state.sideHidden = hidden;
     main.classList.toggle("side-hidden", hidden);
-    sideResizer.title = hidden
-      ? "Click to show details panel"
-      : "Drag to resize details panel";
+    bindLabel(
+      sideResizer,
+      () =>
+        hidden
+          ? t("Click to show details panel", "点击展开详情面板")
+          : t("Drag to resize details panel", "拖动以调整详情面板大小"),
+      "title",
+    );
     applyPanelLayout();
   }
 
@@ -1346,6 +1437,13 @@ export function mountTree(root: HTMLElement) {
     return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
   }
 
+  function graphLabel(node) {
+    return node.virtual_root
+      ? `${t("run", "运行")} ${shortTreeId(node.run_id)}`
+      : node.node_label ||
+          `R${node.coord.R} C${node.coord.C} L${node.coord.L} K${node.coord.K}`;
+  }
+
   function nodeRadius(node) {
     return node.virtual_root ? state.nodeRadius + 5 : state.nodeRadius;
   }
@@ -1353,35 +1451,56 @@ export function mountTree(root: HTMLElement) {
   function showCore(record) {
     if (record.virtual_root) {
       state.selectedNodeId = null;
-      document.getElementById("node-title").textContent = "Virtual root";
-      document.getElementById("node-subtitle").textContent =
-        `Run ${record.run_id}`;
+      bindLabel(document.getElementById("node-title"), () =>
+        t("Virtual root", "虚拟根节点"),
+      );
+      bindLabel(
+        document.getElementById("node-subtitle"),
+        () => `${t("Run", "运行")} ${record.run_id}`,
+      );
       document.getElementById("metrics").innerHTML = "";
       setFormula(null, null);
       renderPreview(null);
       document.getElementById("tool-call").innerHTML = "";
       setDetailText(
-        "Drag nodes horizontally to adjust layout. Auto Layout resets manual positions.",
+        () =>
+          t(
+            "Drag nodes horizontally to adjust layout. Auto Layout resets manual positions.",
+            "可横向拖动节点调整布局。自动布局会重置手动调整的位置。",
+          ),
         false,
       );
       return;
     }
     state.selectedNodeId = record.node_id;
-    document.getElementById("node-title").textContent =
-      record.node_label || record.node_id;
-    document.getElementById("node-subtitle").textContent =
-      `${(record.core.tool_names || []).join(", ") || "no tools"}`;
+    bindLabel(
+      document.getElementById("node-title"),
+      record.node_label || record.node_id,
+    );
+    bindLabel(
+      document.getElementById("node-subtitle"),
+      (record.core.tool_names || []).join(", ") ||
+        (() => t("no tools", "无工具调用")),
+    );
     setFormula(record.core.formula, record.core.formula_latex);
     renderPreview(record, false);
     renderToolCall(record.core.tool_summary || fallbackToolSummary(record));
-    setDetailText("Click this Detail area to load detail.", true);
+    setDetailText(
+      () =>
+        t("Click this Detail area to load detail.", "点击此处加载节点详情。"),
+      true,
+    );
     const metrics = document.getElementById("metrics");
     metrics.innerHTML = "";
     const score = record.core.score || {};
     for (const key of ["mse", "rmse", "mae", "r2"]) {
       const box = document.createElement("div");
       box.className = "metric";
-      box.innerHTML = `<span>${key}</span><strong>${score[key] ?? "n/a"}</strong>`;
+      const name = document.createElement("span");
+      name.textContent = key;
+      const value = document.createElement("strong");
+      bindLabel(value, score[key] ?? (() => t("n/a", "暂无")));
+      box.append(name, value);
       metrics.appendChild(box);
     }
   }
@@ -1393,7 +1512,7 @@ export function mountTree(root: HTMLElement) {
       latexSource.value = "";
       latexSource.disabled = true;
       copyLatexButton.disabled = true;
-      formulaEditorStatus.textContent = "";
+      bindLabel(formulaEditorStatus, "");
       renderLatexDisplay("", true);
       codeBox.textContent = "";
       return;
@@ -1402,7 +1521,7 @@ export function mountTree(root: HTMLElement) {
     latexSource.value = state.latexSource;
     latexSource.disabled = false;
     copyLatexButton.disabled = false;
-    formulaEditorStatus.textContent = "";
+    bindLabel(formulaEditorStatus, "");
     renderLatexDisplay(state.latexSource, Boolean(latex));
     codeBox.textContent = formula;
   }
@@ -1410,26 +1529,33 @@ export function mountTree(root: HTMLElement) {
   function renderLatexDisplay(source, parseAsLatex) {
     state.latexRenderToken += 1;
     const token = state.latexRenderToken;
-    if (!source) {
-      formulaLatex.textContent = "(no candidate formula)";
+    if (!String(source || "").trim()) {
+      bindLabel(formulaLatex, () =>
+        t("(no candidate formula)", "（暂无候选公式）"),
+      );
       formulaLatex.classList.add("muted");
       return;
     }
     formulaLatex.classList.remove("muted");
-    formulaLatex.textContent = latexDisplaySource(source, parseAsLatex);
+    bindLabel(formulaLatex, latexDisplaySource(source, parseAsLatex));
     mathJaxReady
       .then(() => {
         if (token !== state.latexRenderToken) return null;
         return MathJax.typesetPromise([formulaLatex]);
       })
       .catch((error) => {
-        formulaEditorStatus.textContent = `Render failed: ${error.message || error}`;
+        bindLabel(formulaEditorStatus, () =>
+          t(
+            `Render failed: ${error.message || error}`,
+            `渲染失败：${localizedError(error, language)}`,
+          ),
+        );
       });
   }
 
   function latexDisplaySource(source, parseAsLatex) {
     const text = String(source || "").trim();
-    if (!text) return "(no candidate formula)";
+    if (!text) return t("(no candidate formula)", "（暂无候选公式）");
     if (
       text.startsWith("$$") ||
       text.startsWith("\\[") ||
@@ -1445,16 +1571,16 @@ export function mountTree(root: HTMLElement) {
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
-      formulaEditorStatus.textContent = "Copied";
     } catch {
       latexSource.focus();
       latexSource.select();
       document.execCommand("copy");
-      formulaEditorStatus.textContent = "Copied";
     }
+    const copied = () => t("Copied", "已复制");
+    bindLabel(formulaEditorStatus, copied);
     setTimeout(() => {
-      if (formulaEditorStatus.textContent === "Copied")
-        formulaEditorStatus.textContent = "";
+      if (bindings.get(formulaEditorStatus)?.get("") === copied)
+        bindLabel(formulaEditorStatus, "");
     }, 1200);
   }
 
@@ -1464,7 +1590,9 @@ export function mountTree(root: HTMLElement) {
     if (!summary.length) {
       const empty = document.createElement("span");
       empty.className = "muted";
-      empty.textContent = "No tools in prompt or output.";
+      bindLabel(empty, () =>
+        t("No tools in prompt or output.", "提示词和输出中均无工具调用。"),
+      );
       box.appendChild(empty);
       return;
     }
@@ -1485,7 +1613,12 @@ export function mountTree(root: HTMLElement) {
       }
       const count = document.createElement("div");
       count.className = "tool-count";
-      count.textContent = `${item.prompt_count || 0} in prompt`;
+      bindLabel(count, () =>
+        t(
+          `${item.prompt_count || 0} in prompt`,
+          `提示词中 ${item.prompt_count || 0} 次`,
+        ),
+      );
       wrap.append(icon, count);
       box.appendChild(wrap);
     }
@@ -1591,7 +1724,7 @@ export function mountTree(root: HTMLElement) {
     if (!record) {
       const empty = document.createElement("span");
       empty.className = "muted";
-      empty.textContent = "No preview.";
+      bindLabel(empty, () => t("No preview.", "暂无预览。"));
       preview.appendChild(empty);
       return;
     }
@@ -1603,15 +1736,23 @@ export function mountTree(root: HTMLElement) {
       const toggle = document.createElement("button");
       toggle.type = "button";
       toggle.className = "history-toggle";
-      toggle.textContent = `Show history (${historyMessages.length} messages)`;
       const history = document.createElement("div");
       history.className = "chat-history hidden";
       historyMessages.forEach((message) =>
         history.appendChild(chatBubble(message)),
       );
+      const historyLabel = () => {
+        const hidden = history.classList.contains("hidden");
+        const count = historyMessages.length;
+        return t(
+          `${hidden ? "Show" : "Hide"} history (${count} ${count === 1 ? "message" : "messages"})`,
+          `${hidden ? "展开" : "收起"}历史记录（${count} 条消息）`,
+        );
+      };
+      bindLabel(toggle, historyLabel);
       toggle.addEventListener("click", () => {
-        const hidden = history.classList.toggle("hidden");
-        toggle.textContent = `${hidden ? "Show" : "Hide"} history (${historyMessages.length} messages)`;
+        history.classList.toggle("hidden");
+        toggle.textContent = historyLabel();
       });
       preview.append(toggle, history);
     }
@@ -1619,10 +1760,12 @@ export function mountTree(root: HTMLElement) {
     preview.appendChild(
       chatBubble({
         role: "agent",
-        label: "Agent output",
-        text: includeHistory
-          ? formatAgentOutput(record)
-          : record.core.content_preview || "No agent output.",
+        label: () => t("Agent output", "智能体输出"),
+        text: () =>
+          includeHistory
+            ? formatAgentOutput(record)
+            : record.core.content_preview ||
+              t("No agent output.", "暂无智能体输出。"),
       }),
     );
   }
@@ -1632,15 +1775,18 @@ export function mountTree(root: HTMLElement) {
     return prompt.map((message, index) => {
       const role = message && message.role ? String(message.role) : "message";
       const name = message && message.name ? ` · ${message.name}` : "";
-      const textParts = [];
       const content = stringifyContent(message && message.content);
-      if (content) textParts.push(content);
-      const toolCalls = formatToolCalls(message && message.tool_calls);
-      if (toolCalls) textParts.push(`Tool Calls:\n${toolCalls}`);
       return {
         role: chatRole(role),
-        label: `${displayRole(role)}${name} #${index + 1}`,
-        text: textParts.join("\n\n") || "(empty message)",
+        label: () => `${displayRole(role)}${name} #${index + 1}`,
+        text: () => {
+          const calls = formatToolCalls(message && message.tool_calls);
+          return (
+            [content, calls && `${t("Tool Calls:", "工具调用：")}\n${calls}`]
+              .filter(Boolean)
+              .join("\n\n") || t("(empty message)", "（空消息）")
+          );
+        },
       };
     });
   }
@@ -1650,20 +1796,24 @@ export function mountTree(root: HTMLElement) {
     wrap.className = `chat-bubble ${message.role}`;
     const label = document.createElement("div");
     label.className = "chat-label";
-    label.textContent = message.label;
+    bindLabel(label, message.label);
     const box = document.createElement("div");
     box.className = "chat-bubble-box";
     const topResize = document.createElement("div");
     topResize.className = "bubble-resize";
-    topResize.title = "Drag to resize";
+    bindLabel(topResize, () => t("Drag to resize", "拖动以调整大小"), "title");
     const body = document.createElement("div");
     body.className = "chat-bubble-body";
     const pre = document.createElement("pre");
-    pre.textContent = message.text || "";
+    bindLabel(pre, message.text);
     body.appendChild(pre);
     const bottomResize = document.createElement("div");
     bottomResize.className = "bubble-resize";
-    bottomResize.title = "Drag to resize";
+    bindLabel(
+      bottomResize,
+      () => t("Drag to resize", "拖动以调整大小"),
+      "title",
+    );
     attachBubbleResize(topResize, body, "top");
     attachBubbleResize(bottomResize, body, "bottom");
     box.append(topResize, body, bottomResize);
@@ -1706,13 +1856,16 @@ export function mountTree(root: HTMLElement) {
     const detail = record.detail || {};
     const parts = [];
     const reason = reasoningText(detail.message);
-    if (reason) parts.push(`Reason:\n${reason}`);
+    if (reason) parts.push(`${t("Reason:", "推理：")}\n${reason}`);
     const content = stringifyContent(detail.content);
-    if (content) parts.push(`Content:\n${content}`);
+    if (content) parts.push(`${t("Content:", "内容：")}\n${content}`);
     const toolCalls = formatToolCalls(detail.tool_calls);
-    if (toolCalls) parts.push(`Tool Calls:\n${toolCalls}`);
+    if (toolCalls)
+      parts.push(`${t("Tool Calls:", "工具调用：")}\n${toolCalls}`);
     return (
-      parts.join("\n\n") || record.core.content_preview || "No agent output."
+      parts.join("\n\n") ||
+      record.core.content_preview ||
+      t("No agent output.", "暂无智能体输出。")
     );
   }
 
@@ -1739,7 +1892,7 @@ export function mountTree(root: HTMLElement) {
       .map((call, index) => {
         const name =
           (call && (call.name || (call.function && call.function.name))) ||
-          "tool";
+          t("tool", "工具");
         const params =
           (call &&
             (call.params ||
@@ -1761,21 +1914,22 @@ export function mountTree(root: HTMLElement) {
   }
 
   function displayRole(role) {
-    if (role === "assistant") return "Assistant";
-    if (role === "user") return "User";
-    if (role === "tool") return "Tool";
-    if (role === "system") return "System";
+    if (role === "assistant") return t("Assistant", "助手");
+    if (role === "user") return t("User", "用户");
+    if (role === "tool") return t("Tool", "工具");
+    if (role === "system") return t("System", "系统");
+    if (role === "message") return t("Message", "消息");
     return displayToolName(role);
   }
 
   function setDetailText(text, clickable = false) {
-    detailEl.textContent = text;
+    bindLabel(detailEl, text);
     detailEl.classList.toggle("clickable", clickable);
   }
 
   function renderJsonDetail(value) {
     detailEl.classList.remove("clickable");
-    detailEl.innerHTML = "";
+    bindLabel(detailEl, "");
     detailEl.appendChild(jsonNode(value, null, true));
   }
 
@@ -1818,10 +1972,11 @@ export function mountTree(root: HTMLElement) {
     row.appendChild(open);
     const summary = document.createElement("span");
     summary.className = "json-summary json-hidden";
-    summary.textContent =
+    bindLabel(summary, () =>
       type === "array"
-        ? ` ${entries.length} items `
-        : ` ${entries.length} keys `;
+        ? t(` ${entries.length} items `, ` ${entries.length} 项 `)
+        : t(` ${entries.length} keys `, ` ${entries.length} 个键 `),
+    );
     row.appendChild(summary);
     row.appendChild(close);
     wrapper.appendChild(row);
@@ -2026,7 +2181,9 @@ export function mountTree(root: HTMLElement) {
       };
       image.onerror = () => {
         URL.revokeObjectURL(url);
-        reject(new Error("Failed to render SVG export."));
+        reject(
+          new Error(t("Failed to render SVG export.", "SVG 导出渲染失败。")),
+        );
       };
       image.src = url;
     });
@@ -2100,16 +2257,22 @@ export function mountTree(root: HTMLElement) {
       for (const node of drawable) {
         const point = state.positions.get(node.node_id);
         const radius = radii.get(node.node_id);
-        const label = node.virtual_root
-          ? `run ${shortTreeId(node.run_id)}`
-          : node.node_label ||
-            `R${node.coord.R} C${node.coord.C} L${node.coord.L} K${node.coord.K}`;
+        const label = graphLabel(node);
         const size = node.virtual_root ? 12 : 11;
         const y = point.y + radius + 15;
         const textWidth = label.length * size * 0.45;
         commands.push("0.20 0.25 0.32 rg");
+        const unicode = /[^\x20-\x7e]/.test(label);
+        const operand = unicode
+          ? "<" +
+            label
+              .split("")
+              .map((unit) => unit.charCodeAt(0).toString(16).padStart(4, "0"))
+              .join("") +
+            ">"
+          : `(${escapePdfText(label)})`;
         commands.push(
-          `BT /F1 ${size} Tf ${fmt(tx(point.x) - textWidth / 2)} ${fmt(ty(y))} Td (${escapePdfText(label)}) Tj ET`,
+          `BT /${unicode ? "F2" : "F1"} ${size} Tf ${fmt(tx(point.x) - textWidth / 2)} ${fmt(ty(y))} Td ${operand} Tj ET`,
         );
       }
 
@@ -2117,9 +2280,11 @@ export function mountTree(root: HTMLElement) {
     const objects = [
       "<< /Type /Catalog /Pages 2 0 R >>",
       "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${fmt(pageWidth)} ${fmt(pageHeight)}] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>`,
+      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${fmt(pageWidth)} ${fmt(pageHeight)}] /Resources << /Font << /F1 4 0 R /F2 6 0 R >> >> /Contents 5 0 R >>`,
       "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
       `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+      "<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light /Encoding /UniGB-UCS2-H /DescendantFonts [7 0 R] >>",
+      "<< /Type /Font /Subtype /CIDFontType0 /BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) /Supplement 4 >> >>",
     ];
     let pdf = "%PDF-1.4\n";
     const offsets = [0];
@@ -2220,6 +2385,49 @@ export function mountTree(root: HTMLElement) {
     return String(treeId || "current").slice(0, 8);
   }
 
+  // A modeless dialog leaves the language control available while the user
+  // reviews a stop request or drafts their answer to an agent question.
+  const commandDialog = document.getElementById("tree-command-dialog");
+  const commandQuestion = document.getElementById("tree-command-question");
+  const commandAnswer = document.getElementById("tree-command-answer");
+  let dialogQueue = Promise.resolve();
+  function askCommand(question, needsAnswer) {
+    const answer = dialogQueue.then(
+      () =>
+        new Promise((resolve) => {
+          if (runtime.signal.aborted) return resolve(null);
+          bindLabel(commandQuestion, question);
+          commandAnswer.hidden = !needsAnswer;
+          commandAnswer.value = "";
+          commandDialog.returnValue = "cancel";
+          const cancel = () => commandDialog.close("cancel");
+          commandDialog.addEventListener(
+            "close",
+            () => {
+              runtime.signal.removeEventListener("abort", cancel);
+              resolve(
+                commandDialog.returnValue === "confirm"
+                  ? commandAnswer.value
+                  : null,
+              );
+            },
+            { once: true },
+          );
+          runtime.signal.addEventListener("abort", cancel, { once: true });
+          commandDialog.show();
+          (needsAnswer
+            ? commandAnswer
+            : commandDialog.querySelector("button[value=cancel]")
+          ).focus();
+        }),
+    );
+    dialogQueue = answer;
+    return answer;
+  }
+  commandDialog.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") commandDialog.close("cancel");
+  });
+
   async function sendControl(action, message = "") {
     const response = await fetch("/api/control/command", {
       method: "POST",
@@ -2228,19 +2436,27 @@ export function mountTree(root: HTMLElement) {
     });
     if (!response.ok)
       throw new Error(
-        (await response.json()).detail || "Control command failed",
+        (await response.json()).detail ||
+          t("Control command failed", "控制指令失败"),
       );
     const value = await response.json();
     agentPaused = value.paused;
-    pauseAgentButton.textContent = agentPaused ? "Resume" : "Pause";
-    agentStatusEl.textContent = value.stopped
-      ? "agent: stopped"
-      : agentPaused
-        ? "agent: paused"
-        : "agent: running";
+    bindLabel(pauseAgentButton, () =>
+      agentPaused ? t("Resume", "继续") : t("Pause", "暂停"),
+    );
+    bindLabel(agentStatusEl, () =>
+      value.stopped
+        ? t("agent: stopped", "智能体：已停止")
+        : agentPaused
+          ? t("agent: paused", "智能体：已暂停")
+          : t("agent: running", "智能体：运行中"),
+    );
   }
 
+  let pollingControl = false;
   async function pollControl() {
+    if (pollingControl) return;
+    pollingControl = true;
     try {
       const response = await fetch(
         `/api/control/events?after_seq=${controlSeq}`,
@@ -2250,9 +2466,10 @@ export function mountTree(root: HTMLElement) {
       for (const event of payload.events || []) {
         controlSeq = Math.max(controlSeq, event.seq || 0);
         if (event.kind === "question") {
-          const answer = window.prompt(
-            event.payload.message || "Agent requests guidance",
-            "",
+          const answer = await askCommand(
+            event.payload.message ||
+              (() => t("Agent requests guidance", "智能体请求指导")),
+            true,
           );
           if (answer !== null)
             await fetch(`/api/control/reply/${event.id}`, {
@@ -2263,7 +2480,14 @@ export function mountTree(root: HTMLElement) {
         }
       }
     } catch (error) {
-      agentStatusEl.textContent = `control: ${error.message}`;
+      bindLabel(agentStatusEl, () =>
+        t(
+          `control: ${error.message}`,
+          `控制指令：${localizedError(error, language)}`,
+        ),
+      );
+    } finally {
+      pollingControl = false;
     }
   }
 
@@ -2279,8 +2503,12 @@ export function mountTree(root: HTMLElement) {
   pauseAgentButton.addEventListener("click", () =>
     sendControl(agentPaused ? "resume" : "pause"),
   );
-  stopAgentButton.addEventListener("click", () => {
-    if (window.confirm("Stop the connected agent?")) sendControl("stop");
+  stopAgentButton.addEventListener("click", async () => {
+    const confirmed = await askCommand(
+      () => t("Stop the connected agent?", "停止已连接的智能体？"),
+      false,
+    );
+    if (confirmed !== null) sendControl("stop");
   });
   if (!viewerParams.has("embed")) setInterval(pollControl, 1000);
 
@@ -2294,13 +2522,14 @@ export function mountTree(root: HTMLElement) {
   setRunTab(state.runTab);
   applyPanelLayout();
   if (viewerParams.has("run")) {
-    reportTree("正在加载本次搜索树…", "treeLoading");
+    reportTree("treeLoading");
     pollRequestedRun();
   } else {
-    loadRuns().catch((error) => reportTree(error.message));
+    loadRuns().catch((error) => reportTree(null, { message: error.message }));
   }
 
   return () => {
+    unsubscribeLanguage();
     runtime.dispose();
     document.body.classList.remove("embedded");
   };

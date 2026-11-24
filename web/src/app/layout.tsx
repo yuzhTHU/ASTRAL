@@ -6,7 +6,7 @@ import "./user-menu.css";
 import "katex/dist/katex.min.css";
 export const metadata: Metadata = {
   title: "ASTRAL",
-  description: "Human–AI interactive astronomy discovery",
+  description: "人机交互天文发现平台",
 };
 export const viewport = { themeColor: "#1F2C7E" };
 export default function Layout({ children }: { children: React.ReactNode }) {

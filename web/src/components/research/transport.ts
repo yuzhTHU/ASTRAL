@@ -55,7 +55,13 @@ export function researchTransport(signal: AbortSignal, conversation?: string) {
         return { selected: id };
       }
       await api(`conversations/${id}`, verb, data);
-      return verb === "DELETE" ? conversations() : { id, ...data };
+      return verb === "DELETE"
+        ? conversations()
+        : {
+            id,
+            ...data,
+            ...(data?.name !== undefined ? { defaultName: false } : {}),
+          };
     }
     if (!selected()) await conversations();
     if (path === "/runs") {

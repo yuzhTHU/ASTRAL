@@ -35,22 +35,31 @@ test("administrator manages sample definitions, order and enabled state; ordinar
     .getByRole("button", { name: /双模/ })
     .click();
   await expect(page.locator(".admin-surface .ant-drawer-open")).toBeVisible();
-  await page.getByRole("tab", { name: "数据与发布 / Data" }).click();
-  await expect(page.getByLabel("enabled", { exact: true })).not.toBeChecked();
-  await expect(page.getByLabel("data_locations", { exact: true })).toHaveValue(
-    "",
-  );
-  await page.getByRole("tab", { name: "阶段提示词 / Prompts" }).click();
+  await page.getByRole("tab", { name: "数据与发布" }).click();
+  await expect(
+    page.getByLabel("启用此任务", { exact: true }),
+  ).not.toBeChecked();
+  await expect(page.getByLabel("数据位置", { exact: true })).toHaveValue("");
+  await page.getByRole("tab", { name: "阶段提示词" }).click();
   expect(
-    await page.getByLabel("preparation", { exact: true }).inputValue(),
+    await page.getByLabel("数据准备提示词", { exact: true }).inputValue(),
   ).toContain("{inputs}");
-  await page
-    .getByRole("button", { name: "取消 / Cancel", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "添加任务 / Add task", exact: true })
-    .click();
+  await page.getByRole("button", { name: "取消", exact: true }).click();
+  await page.getByRole("button", { name: "添加任务", exact: true }).click();
   const name = `study-${Date.now()}`;
+  const labels: Record<string, string> = {
+    name: "任务标识",
+    topic: "分类",
+    subject_zh: "卡片标题",
+    title: "论文标题",
+    task: "研究问题",
+    preparation: "数据准备提示词",
+    evaluation: "Evaluator 提示词",
+    citation: "引用",
+    summary_zh: "中文公式摘要",
+    description_zh: "中文说明",
+    description_en: "英文说明",
+  };
   for (const [field, value] of Object.entries({
     name,
     topic: "New topic",
@@ -65,21 +74,19 @@ test("administrator manages sample definitions, order and enabled state; ordinar
     description_en: "Administrator maintained sample",
   })) {
     const tab = ["task", "preparation", "evaluation"].includes(field)
-      ? "阶段提示词 / Prompts"
+      ? "阶段提示词"
       : ["summary_zh", "description_zh", "description_en"].includes(field)
-        ? "说明与公式 / Display"
-        : "基本信息 / Basics";
+        ? "说明与公式"
+        : "基本信息";
     await page.getByRole("tab", { name: tab }).click();
-    await page.getByLabel(field, { exact: true }).fill(value);
+    await page.getByLabel(labels[field], { exact: true }).fill(value);
   }
-  await page.getByRole("button", { name: "保存任务 / Save task" }).click();
-  await expect(page.getByRole("status")).toHaveText("已保存 / Saved");
+  await page.getByRole("button", { name: "保存任务" }).click();
+  await expect(page.getByRole("status")).toHaveText("已保存");
   await expect(
     page.locator(".discovery-task-table tbody tr[data-testid]"),
   ).toHaveCount(8);
-  await page
-    .getByRole("button", { name: `Move up ${name}`, exact: true })
-    .click();
+  await page.getByRole("button", { name: `上移 ${name}`, exact: true }).click();
   await expect(
     page.locator(".discovery-task-table tbody tr[data-testid]").nth(6),
   ).toHaveAttribute("data-testid", `task-${name}`);
@@ -87,23 +94,23 @@ test("administrator manages sample definitions, order and enabled state; ordinar
     .getByTestId(`task-${name}`)
     .getByRole("button", { name: /可管理/ })
     .click();
-  await page.getByRole("tab", { name: "数据与发布 / Data" }).click();
+  await page.getByRole("tab", { name: "数据与发布" }).click();
   await page
-    .getByLabel("data_locations", { exact: true })
+    .getByLabel("数据位置", { exact: true })
     .fill("/samples/observations.csv");
-  await page.getByLabel("enabled", { exact: true }).check();
-  await page.getByRole("button", { name: "保存任务 / Save task" }).click();
-  await expect(page.getByRole("status")).toHaveText("已保存 / Saved");
+  await page.getByLabel("启用此任务", { exact: true }).check();
+  await page.getByRole("button", { name: "保存任务" }).click();
+  await expect(page.getByRole("status")).toHaveText("已保存");
   await page.reload();
   await page
     .getByTestId(`task-${name}`)
     .getByRole("button", { name: /可管理/ })
     .click();
-  await page.getByRole("tab", { name: "数据与发布 / Data" }).click();
-  await expect(page.getByLabel("data_locations", { exact: true })).toHaveValue(
+  await page.getByRole("tab", { name: "数据与发布" }).click();
+  await expect(page.getByLabel("数据位置", { exact: true })).toHaveValue(
     "/samples/observations.csv",
   );
-  await expect(page.getByLabel("enabled", { exact: true })).toBeChecked();
+  await expect(page.getByLabel("启用此任务", { exact: true })).toBeChecked();
   await page.screenshot({
     path: info.outputPath("sample-admin-light.png"),
     fullPage: true,
@@ -172,10 +179,8 @@ test("administrator manages sample definitions, order and enabled state; ordinar
   await expect(workbench.locator("#files")).toContainText("observations.csv");
   expect(errors).toEqual([]);
 
-  await page.getByRole("button", { name: "删除任务 / Delete task" }).click();
-  await page
-    .getByRole("button", { name: "确认删除 / Delete", exact: true })
-    .click();
+  await page.getByRole("button", { name: "删除任务" }).click();
+  await page.getByRole("button", { name: "确认删除", exact: true }).click();
   await expect(
     page.locator(".discovery-task-table tbody tr[data-testid]"),
   ).toHaveCount(7);

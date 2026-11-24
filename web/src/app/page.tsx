@@ -4,7 +4,12 @@ import { api, type ModelSummary } from "@/lib/client";
 import { AccountForm } from "@/components/accounts";
 import { ModelManager } from "@/components/models";
 import { ResearchWorkspace } from "@/components/research/workspace";
+import { localizedError, useUiLanguage } from "@/components/ui-language";
+import { LanguageButton } from "@/components/language-button";
+
 export default function Page() {
+  const language = useUiLanguage();
+  const en = language === "en";
   const [user, setUser] = useState<any>(null),
     [ready, setReady] = useState(false),
     [models, setModels] = useState<ModelSummary[]>([]),
@@ -42,7 +47,7 @@ export default function Page() {
             : document.documentElement.dataset.theme || "light"
         }
       >
-        <main>Loading…</main>
+        <main>{en ? "Loading…" : "正在加载…"}</main>
       </div>
     );
   if (!user)
@@ -55,13 +60,10 @@ export default function Page() {
             : document.documentElement.dataset.theme || "light"
         }
       >
-        <AccountForm
-          onLogin={setUser}
-          en={
-            typeof document !== "undefined" &&
-            document.documentElement.lang === "en"
-          }
-        />
+        <div className="account-language">
+          <LanguageButton />
+        </div>
+        <AccountForm onLogin={setUser} en={en} />
       </div>
     );
   return (
@@ -87,15 +89,15 @@ export default function Page() {
           >
             <button
               className="account-dialog-close"
-              aria-label="Close account settings"
+              aria-label={en ? "Close account settings" : "关闭账号设置"}
               onClick={() => dialog.current?.close()}
             >
               ×
             </button>
-            <nav aria-label="Account settings">
-              <button>模型配置 / Models</button>
+            <nav aria-label={en ? "Account settings" : "账号设置"}>
+              <button>{en ? "Models" : "模型配置"}</button>
               <a href="/tools" target="_blank" rel="noopener noreferrer">
-                工具配置 / Tools
+                {en ? "Tools" : "工具配置"}
               </a>
               {user.role === "admin" && (
                 <a
@@ -103,12 +105,12 @@ export default function Page() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  样例任务 / Sample tasks
+                  {en ? "Sample tasks" : "样例任务"}
                 </a>
               )}
               {user.role === "admin" && (
                 <a href="/admin" target="_blank" rel="noopener noreferrer">
-                  管理 / Admin
+                  {en ? "Admin" : "管理"}
                 </a>
               )}
               <span>{user.username}</span>
@@ -118,10 +120,10 @@ export default function Page() {
                   location.reload();
                 }}
               >
-                退出 / Sign out
+                {en ? "Sign out" : "退出"}
               </button>
             </nav>
-            {error && <p role="alert">{error}</p>}
+            {error && <p role="alert">{localizedError(error, language)}</p>}
             <ModelManager
               models={models}
               admin={user.role === "admin"}

@@ -5,6 +5,7 @@ import { resolveModel, type Role } from "./models";
 
 export type Conversation = {
   name: string;
+  defaultName?: boolean;
   creationKey: string;
   harnessId?: string;
   archived: boolean;
@@ -38,7 +39,7 @@ export async function ensureHarness(entity: Entity<Conversation>) {
 export async function createConversation(
   user: Identity,
   key: string,
-  name: string,
+  name?: string,
 ) {
   if (!key || key.length > 100)
     throw new ApiError(422, "A valid idempotency key is required");
@@ -51,6 +52,7 @@ export async function createConversation(
         user.id,
         {
           name: name || "Unnamed Conversation",
+          defaultName: !name,
           creationKey: key,
           archived: false,
           createdAt: Date.now(),

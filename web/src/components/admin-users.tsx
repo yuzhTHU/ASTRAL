@@ -1,4 +1,10 @@
 "use client";
+import {
+  useManagementText,
+  LiveText,
+  NoticeText,
+  type Notice,
+} from "./management-text";
 
 import { useEffect, useState } from "react";
 import {
@@ -20,6 +26,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   LinkOutlined,
+  CloseCircleFilled,
   SearchOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/client";
@@ -31,15 +38,13 @@ type User = {
   disabled: boolean;
 };
 export function UserAdministration() {
+  const t = useManagementText();
   const { modal } = App.useApp();
   const [users, setUsers] = useState<User[]>([]);
   const [mode, setMode] = useState("open");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState<{
-    text: string;
-    error?: boolean;
-  } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [invitation, setInvitation] = useState("");
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
@@ -56,7 +61,7 @@ export function UserAdministration() {
       setUsers(accounts.users);
       setMode(registration.mode);
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      setNotice({ error: String(e) });
     } finally {
       setLoading(false);
     }
@@ -70,10 +75,10 @@ export function UserAdministration() {
     try {
       await fn();
       await refresh();
-      setNotice({ text: "已保存 / Saved" });
+      setNotice({ success: "saved" });
       return true;
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      setNotice({ error: String(e) });
       return false;
     } finally {
       setBusy(false);
@@ -81,12 +86,22 @@ export function UserAdministration() {
   }
   function toggle(user: User) {
     modal.confirm({
-      title: user.disabled
-        ? "启用此账号？ / Enable account?"
-        : "禁用此账号？ / Disable account?",
-      content: `${user.username} · 修改后会撤销该用户当前登录状态。`,
-      okText: "确认 / Confirm",
-      cancelText: "取消 / Cancel",
+      title: user.disabled ? (
+        <LiveText zh="启用此账号？" en="Enable account?" />
+      ) : (
+        <LiveText zh="禁用此账号？" en="Disable account?" />
+      ),
+      content: (
+        <>
+          {user.username} ·{" "}
+          <LiveText
+            zh="修改后会撤销该用户当前登录状态。"
+            en="This change signs the user out of all sessions."
+          />
+        </>
+      ),
+      okText: <LiveText zh="确认" en="Confirm" />,
+      cancelText: <LiveText zh="取消" en="Cancel" />,
       okButtonProps: { danger: !user.disabled },
       onOk: async () => {
         if (
@@ -104,8 +119,15 @@ export function UserAdministration() {
     <main className="admin-page">
       <div className="admin-page-heading">
         <div>
-          <Typography.Title level={2}>账号与注册 / Accounts</Typography.Title>
-          <p>管理平台访问、注册策略与用户账号。</p>
+          <Typography.Title level={2}>
+            {t("账号与注册", "Accounts")}
+          </Typography.Title>
+          <p>
+            {t(
+              "管理平台访问、注册策略与用户账号。",
+              "Manage access to the platform, registration policies and user accounts.",
+            )}
+          </p>
         </div>
         <Space>
           <Button
@@ -113,7 +135,7 @@ export function UserAdministration() {
             onClick={refresh}
             disabled={busy}
           >
-            刷新 / Reload
+            {t("刷新", "Reload")}
           </Button>
           <Button
             type="primary"
@@ -123,23 +145,23 @@ export function UserAdministration() {
               setCreating(true);
             }}
           >
-            创建用户 / Create user
+            {t("创建用户", "Create user")}
           </Button>
         </Space>
       </div>
       <div className="admin-stats">
         <Card>
-          <Statistic title="全部账号 / Total" value={users.length} />
+          <Statistic title={t("全部账号", "Total")} value={users.length} />
         </Card>
         <Card>
           <Statistic
-            title="可用账号 / Active"
+            title={t("可用账号", "Active")}
             value={users.filter((u) => !u.disabled).length}
           />
         </Card>
         <Card>
           <Statistic
-            title="管理员 / Administrators"
+            title={t("管理员", "Administrators")}
             value={users.filter((u) => u.role === "admin").length}
           />
         </Card>
@@ -148,15 +170,19 @@ export function UserAdministration() {
         <Alert
           className="admin-notice"
           showIcon
-          type={notice.error ? "error" : "success"}
-          title={<span role="status">{notice.text}</span>}
+          type={"error" in notice ? "error" : "success"}
+          title={
+            <span role="status">
+              <NoticeText notice={notice} />
+            </span>
+          }
         />
       )}
-      <Card title="注册策略 / Registration" style={{ marginBottom: 24 }}>
+      <Card title={t("注册策略", "Registration")} style={{ marginBottom: 24 }}>
         <Space wrap size="large">
           <Select
             virtual={false}
-            aria-label="Registration mode"
+            aria-label={t("注册策略", "Registration mode")}
             value={mode}
             disabled={busy || loading}
             style={{ width: 260 }}
@@ -164,9 +190,9 @@ export function UserAdministration() {
               action(() => api("admin/registration", "PUT", { mode: next }))
             }
             options={[
-              { value: "open", label: "开放注册 / Open" },
-              { value: "invite", label: "邀请注册 / Invitation only" },
-              { value: "admin", label: "管理员创建 / Admin-created" },
+              { value: "open", label: t("开放注册", "Open") },
+              { value: "invite", label: t("邀请注册", "Invitation only") },
+              { value: "admin", label: t("管理员创建", "Admin-created") },
             ]}
           />
           <Button
@@ -178,16 +204,19 @@ export function UserAdministration() {
                 const result = await api("admin/invitations", "POST", {});
                 setInvitation(`${location.origin}/?invitation=${result.token}`);
               } catch (e) {
-                setNotice({ text: String(e), error: true });
+                setNotice({ error: String(e) });
               } finally {
                 setBusy(false);
               }
             }}
           >
-            创建邀请 / Create invitation
+            {t("创建邀请", "Create invitation")}
           </Button>
           <Typography.Text type="secondary">
-            关闭开放注册后，既有账号仍可登录。
+            {t(
+              "关闭开放注册后，既有账号仍可登录。",
+              "Existing users can still sign in when open registration is closed.",
+            )}
           </Typography.Text>
         </Space>
         {invitation && (
@@ -195,7 +224,10 @@ export function UserAdministration() {
             style={{ marginTop: 16 }}
             type="info"
             showIcon
-            title="邀请链接 · 一次性使用，七天后过期"
+            title={t(
+              "邀请链接 · 一次性使用，七天后过期",
+              "Single-use invitation link, expires in seven days",
+            )}
             description={
               <Typography.Paragraph
                 copyable
@@ -207,15 +239,19 @@ export function UserAdministration() {
           />
         )}
       </Card>
-      <Card title="用户列表 / Users">
+      <Card title={t("用户列表", "Users")}>
         <div className="admin-toolbar">
           <Input
             className="admin-search"
-            aria-label="Search users"
+            aria-label={t("搜索用户", "Search users")}
             prefix={<SearchOutlined aria-hidden />}
-            placeholder="搜索用户名 / Search users"
+            placeholder={t("搜索用户名", "Search users")}
             value={query}
-            allowClear
+            allowClear={{
+              clearIcon: (
+                <CloseCircleFilled aria-label={t("清除搜索", "Clear search")} />
+              ),
+            }}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
@@ -229,36 +265,38 @@ export function UserAdministration() {
           scroll={{ x: 650 }}
           columns={[
             {
-              title: "用户名 / Username",
+              title: t("用户名", "Username"),
               dataIndex: "username",
               render: (value: string) => (
                 <Typography.Text strong>{value}</Typography.Text>
               ),
             },
             {
-              title: "角色 / Role",
+              title: t("角色", "Role"),
               dataIndex: "role",
               render: (value: string) => (
                 <Tag color={value === "admin" ? "geekblue" : "default"}>
-                  {value === "admin" ? "管理员 / Admin" : "用户 / User"}
+                  {value === "admin" ? t("管理员", "Admin") : t("用户", "User")}
                 </Tag>
               ),
             },
             {
-              title: "状态 / Status",
+              title: t("状态", "Status"),
               dataIndex: "disabled",
               render: (value: boolean) => (
                 <Tag color={value ? "default" : "success"}>
-                  {value ? "已禁用 / Disabled" : "正常 / Active"}
+                  {value ? t("已禁用", "Disabled") : t("正常", "Active")}
                 </Tag>
               ),
             },
             {
-              title: "操作 / Actions",
+              title: t("操作", "Actions"),
               key: "actions",
               render: (_, user) =>
                 user.role === "admin" ? (
-                  <Typography.Text type="secondary">管理员账号</Typography.Text>
+                  <Typography.Text type="secondary">
+                    {t("管理员账号", "Administrator account")}
+                  </Typography.Text>
                 ) : (
                   <Space>
                     <Button
@@ -267,7 +305,9 @@ export function UserAdministration() {
                       danger={!user.disabled}
                       onClick={() => toggle(user)}
                     >
-                      {user.disabled ? "启用 / Enable" : "禁用 / Disable"}
+                      {user.disabled
+                        ? t("启用", "Enable")
+                        : t("禁用", "Disable")}
                     </Button>
                     <Button
                       size="small"
@@ -277,7 +317,7 @@ export function UserAdministration() {
                         setResetting(user);
                       }}
                     >
-                      重置密码 / Reset password
+                      {t("重置密码", "Reset password")}
                     </Button>
                   </Space>
                 ),
@@ -286,7 +326,7 @@ export function UserAdministration() {
         />
       </Card>
       <Modal
-        title="创建用户 / Create user"
+        title={t("创建用户", "Create user")}
         open={creating}
         onCancel={() => setCreating(false)}
         footer={null}
@@ -302,31 +342,59 @@ export function UserAdministration() {
         >
           <Form.Item
             name="username"
-            label="用户名 / Username"
-            rules={[{ required: true, min: 3, max: 64 }]}
+            label={t("用户名", "Username")}
+            rules={[
+              {
+                required: true,
+                min: 3,
+                max: 64,
+                message: (
+                  <LiveText
+                    zh="请输入 3 至 64 个字符的用户名"
+                    en="Enter a username of 3 to 64 characters."
+                  />
+                ),
+              },
+            ]}
           >
-            <Input aria-label="New username" autoComplete="off" />
+            <Input
+              aria-label={t("新建用户名", "New username")}
+              autoComplete="off"
+            />
           </Form.Item>
           <Form.Item
             name="password"
-            label="初始密码 / Password"
-            rules={[{ required: true, min: 12 }]}
+            label={t("初始密码", "Password")}
+            rules={[
+              {
+                required: true,
+                min: 12,
+                message: (
+                  <LiveText
+                    zh="请输入至少 12 个字符的密码"
+                    en="Enter a password of at least 12 characters."
+                  />
+                ),
+              },
+            ]}
           >
             <Input.Password
-              aria-label="New user password"
+              aria-label={t("新用户密码", "New user password")}
               autoComplete="new-password"
             />
           </Form.Item>
           <Space>
             <Button type="primary" htmlType="submit" loading={busy}>
-              创建 / Create
+              {t("创建", "Create")}
             </Button>
-            <Button onClick={() => setCreating(false)}>取消 / Cancel</Button>
+            <Button onClick={() => setCreating(false)}>
+              {t("取消", "Cancel")}
+            </Button>
           </Space>
         </Form>
       </Modal>
       <Modal
-        title={`重置密码 / Reset password · ${resetting?.username || ""}`}
+        title={`${t("重置密码", "Reset password")} · ${resetting?.username || ""}`}
         open={!!resetting}
         onCancel={() => setResetting(null)}
         footer={null}
@@ -336,7 +404,10 @@ export function UserAdministration() {
           className="admin-notice"
           type="info"
           showIcon
-          title="密码更新后，该用户的所有登录状态将被撤销。"
+          title={t(
+            "密码更新后，该用户的所有登录状态将被撤销。",
+            "Updating the password signs the user out of all sessions.",
+          )}
         />
         <Form
           form={passwordForm}
@@ -353,16 +424,27 @@ export function UserAdministration() {
         >
           <Form.Item
             name="password"
-            label="新密码 / New password"
-            rules={[{ required: true, min: 12 }]}
+            label={t("新密码", "New password")}
+            rules={[
+              {
+                required: true,
+                min: 12,
+                message: (
+                  <LiveText
+                    zh="请输入至少 12 个字符的密码"
+                    en="Enter a password of at least 12 characters."
+                  />
+                ),
+              },
+            ]}
           >
             <Input.Password
-              aria-label="Reset password"
+              aria-label={t("重置密码", "Reset password")}
               autoComplete="new-password"
             />
           </Form.Item>
           <Button type="primary" htmlType="submit" loading={busy}>
-            更新密码 / Update password
+            {t("更新密码", "Update password")}
           </Button>
         </Form>
       </Modal>

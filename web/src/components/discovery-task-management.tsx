@@ -1,4 +1,11 @@
 "use client";
+import {
+  useManagementText,
+  LiveText,
+  NoticeText,
+  type Notice,
+  type ManagementTranslator,
+} from "./management-text";
 
 import { useEffect, useState } from "react";
 import {
@@ -27,6 +34,7 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
+  CloseCircleFilled,
   SearchOutlined,
 } from "@ant-design/icons";
 import { api } from "@/lib/client";
@@ -59,41 +67,43 @@ const empty = (): Task => ({
   summary_zh: "",
   summary_en: "",
 });
-const groups = [
-  {
-    key: "basic",
-    label: "基本信息 / Basics",
-    fields: [
-      ["name", "任务标识 / Identifier"],
-      ["topic", "分类 / Topic"],
-      ["subject_zh", "卡片标题 / Card title"],
-      ["title", "论文标题 / Paper title"],
-      ["publisher_url", "论文链接 / Publisher URL"],
-      ["citation", "引用 / Citation"],
-      ["data_stage", "数据阶段 / Data stage"],
-    ],
-  },
-  {
-    key: "descriptions",
-    label: "说明与公式 / Display",
-    fields: [
-      ["description_zh", "中文说明 / Chinese description"],
-      ["description_en", "英文说明 / English description"],
-      ["relation_zh", "关系说明 / Relation"],
-      ["summary_zh", "中文公式摘要 / Chinese summary"],
-      ["summary_en", "英文公式摘要 / English summary"],
-    ],
-  },
-  {
-    key: "prompts",
-    label: "阶段提示词 / Prompts",
-    fields: [
-      ["task", "研究问题 / Research question"],
-      ["preparation", "数据准备提示词 / Preparation prompt"],
-      ["evaluation", "Evaluator 提示词 / Evaluation prompt"],
-    ],
-  },
-] as const;
+function taskGroups(t: ManagementTranslator) {
+  return [
+    {
+      key: "basic",
+      label: t("基本信息", "Basics"),
+      fields: [
+        ["name", t("任务标识", "Identifier")],
+        ["topic", t("分类", "Topic")],
+        ["subject_zh", t("卡片标题", "Card title")],
+        ["title", t("论文标题", "Paper title")],
+        ["publisher_url", t("论文链接", "Publisher URL")],
+        ["citation", t("引用", "Citation")],
+        ["data_stage", t("数据阶段", "Data stage")],
+      ],
+    },
+    {
+      key: "descriptions",
+      label: t("说明与公式", "Display"),
+      fields: [
+        ["description_zh", t("中文说明", "Chinese description")],
+        ["description_en", t("英文说明", "English description")],
+        ["relation_zh", t("关系说明", "Relation")],
+        ["summary_zh", t("中文公式摘要", "Chinese summary")],
+        ["summary_en", t("英文公式摘要", "English summary")],
+      ],
+    },
+    {
+      key: "prompts",
+      label: t("阶段提示词", "Prompts"),
+      fields: [
+        ["task", t("研究问题", "Research question")],
+        ["preparation", t("数据准备提示词", "Preparation prompt")],
+        ["evaluation", t("Evaluator 提示词", "Evaluation prompt")],
+      ],
+    },
+  ] as const;
+}
 const required = new Set([
   "name",
   "topic",
@@ -106,6 +116,7 @@ const required = new Set([
 const wide = new Set(["title", "data_stage"]);
 
 export function DiscoveryTaskManagement() {
+  const t = useManagementText();
   const { modal } = App.useApp();
   const [form] = Form.useForm<TaskForm>();
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -115,12 +126,10 @@ export function DiscoveryTaskManagement() {
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [notice, setNotice] = useState<{
-    text: string;
-    error?: boolean;
-  } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const groups = taskGroups(t);
   const creating = !selected;
   async function refresh() {
     setLoading(true);
@@ -128,7 +137,7 @@ export function DiscoveryTaskManagement() {
       setCatalog(await api<Catalog>(endpoint));
       setNotice(null);
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      setNotice({ error: String(e) });
     } finally {
       setLoading(false);
     }
@@ -142,9 +151,9 @@ export function DiscoveryTaskManagement() {
       return;
     }
     modal.confirm({
-      title: "放弃未保存的修改？ / Discard changes?",
-      okText: "放弃修改 / Discard",
-      cancelText: "继续编辑 / Keep editing",
+      title: <LiveText zh="放弃未保存的修改？" en="Discard changes?" />,
+      okText: <LiveText zh="放弃修改" en="Discard" />,
+      cancelText: <LiveText zh="继续编辑" en="Keep editing" />,
       onOk: next,
     });
   }
@@ -170,10 +179,10 @@ export function DiscoveryTaskManagement() {
       const next = await api<Catalog>(path, method, body);
       setCatalog(next);
       setDirty(false);
-      setNotice({ text: "已保存 / Saved" });
+      setNotice({ success: "saved" });
       return next;
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      setNotice({ error: String(e) });
       return null;
     } finally {
       setBusy(false);
@@ -212,10 +221,15 @@ export function DiscoveryTaskManagement() {
   function remove() {
     if (!selected || !catalog) return;
     modal.confirm({
-      title: "删除任务？ / Delete task?",
-      content: "原始数据和已加载会话会保留。任务将从样例列表中移除。",
-      okText: "确认删除 / Delete",
-      cancelText: "取消 / Cancel",
+      title: <LiveText zh="删除任务？" en="Delete task?" />,
+      content: (
+        <LiveText
+          zh="原始数据和已加载会话会保留。任务将从样例列表中移除。"
+          en="The task will be removed from the sample list. Its original data and existing sessions are preserved."
+        />
+      ),
+      okText: <LiveText zh="确认删除" en="Delete" />,
+      cancelText: <LiveText zh="取消" en="Cancel" />,
       okButtonProps: { danger: true },
       onOk: async () => {
         const next = await mutate(
@@ -241,8 +255,15 @@ export function DiscoveryTaskManagement() {
     <main className="admin-page">
       <div className="admin-page-heading">
         <div>
-          <Typography.Title level={2}>样例任务 / Sample tasks</Typography.Title>
-          <p>维护科研任务、阶段提示词与共享数据入口。</p>
+          <Typography.Title level={2}>
+            {t("样例任务", "Sample tasks")}
+          </Typography.Title>
+          <p>
+            {t(
+              "维护科研任务、阶段提示词与共享数据入口。",
+              "Manage research tasks, stage prompts and shared data locations.",
+            )}
+          </p>
         </div>
         <Space>
           <Button
@@ -256,7 +277,7 @@ export function DiscoveryTaskManagement() {
               })
             }
           >
-            刷新 / Reload
+            {t("刷新", "Reload")}
           </Button>
           <Button
             type="primary"
@@ -264,26 +285,26 @@ export function DiscoveryTaskManagement() {
             disabled={busy || loading}
             onClick={() => edit(null)}
           >
-            添加任务 / Add task
+            {t("添加任务", "Add task")}
           </Button>
         </Space>
       </div>
       <div className="admin-stats">
         <Card>
           <Statistic
-            title="全部任务 / Total"
+            title={t("全部任务", "Total")}
             value={catalog?.tasks.length || 0}
           />
         </Card>
         <Card>
           <Statistic
-            title="已启用 / Enabled"
+            title={t("已启用", "Enabled")}
             value={catalog?.tasks.filter((t) => t.enabled).length || 0}
           />
         </Card>
         <Card>
           <Statistic
-            title="已禁用 / Disabled"
+            title={t("已禁用", "Disabled")}
             value={catalog?.tasks.filter((t) => !t.enabled).length || 0}
           />
         </Card>
@@ -291,36 +312,47 @@ export function DiscoveryTaskManagement() {
       {notice && !open && (
         <Alert
           className="admin-notice"
-          type={notice.error ? "error" : "success"}
+          type={"error" in notice ? "error" : "success"}
           showIcon
-          title={<span role="status">{notice.text}</span>}
+          title={
+            <span role="status">
+              <NoticeText notice={notice} />
+            </span>
+          }
         />
       )}
       <Card>
         <div className="admin-toolbar">
           <Input
             className="admin-search"
-            aria-label="Search sample tasks"
+            aria-label={t("搜索样例任务", "Search sample tasks")}
             prefix={<SearchOutlined aria-hidden />}
-            placeholder="搜索名称、分类或论文 / Search"
-            allowClear
+            placeholder={t("搜索名称、分类或论文", "Search")}
+            allowClear={{
+              clearIcon: (
+                <CloseCircleFilled aria-label={t("清除搜索", "Clear search")} />
+              ),
+            }}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
           <Select
             virtual={false}
-            aria-label="Sample task status"
+            aria-label={t("样例任务状态", "Sample task status")}
             value={status}
             onChange={setStatus}
             style={{ width: 180 }}
             options={[
-              { value: "all", label: "全部状态 / All" },
-              { value: "enabled", label: "已启用 / Enabled" },
-              { value: "disabled", label: "已禁用 / Disabled" },
+              { value: "all", label: t("全部状态", "All") },
+              { value: "enabled", label: t("已启用", "Enabled") },
+              { value: "disabled", label: t("已禁用", "Disabled") },
             ]}
           />
           <Typography.Text type="secondary">
-            通过上下箭头调整展示顺序，立即保存。
+            {t(
+              "通过上下箭头调整展示顺序，立即保存。",
+              "Use the arrows to reorder tasks. Changes are saved immediately.",
+            )}
           </Typography.Text>
         </div>
         {filteredOrder && (
@@ -328,7 +360,7 @@ export function DiscoveryTaskManagement() {
             className="admin-notice"
             type="info"
             showIcon
-            title="清除筛选后可调整全局顺序 / Clear filters to reorder"
+            title={t("清除筛选后可调整全局顺序", "Clear filters to reorder")}
           />
         )}
         <Table<Task>
@@ -338,7 +370,9 @@ export function DiscoveryTaskManagement() {
           dataSource={filtered}
           pagination={false}
           scroll={{ x: 760 }}
-          locale={{ emptyText: <Empty description="暂无任务 / No tasks" /> }}
+          locale={{
+            emptyText: <Empty description={t("暂无任务", "No tasks")} />,
+          }}
           onRow={(task) =>
             ({
               "data-testid": `task-${task.name}`,
@@ -346,7 +380,7 @@ export function DiscoveryTaskManagement() {
           }
           columns={[
             {
-              title: "顺序 / Order",
+              title: t("顺序", "Order"),
               width: 85,
               render: (_, task) => (
                 <Typography.Text type="secondary">
@@ -356,7 +390,7 @@ export function DiscoveryTaskManagement() {
               ),
             },
             {
-              title: "任务 / Task",
+              title: t("任务", "Task"),
               key: "task",
               render: (_, task) => (
                 <>
@@ -365,41 +399,47 @@ export function DiscoveryTaskManagement() {
                     className="admin-table-title"
                     onClick={() => edit(task)}
                   >
-                    {task.subject_zh}
+                    {t(task.subject_zh, task.title || task.name)}
                   </Button>
                   <span className="admin-table-subtitle">{task.name}</span>
                 </>
               ),
             },
             {
-              title: "分类 / Topic",
+              title: t("分类", "Topic"),
               dataIndex: "topic",
               width: 100,
               render: (value: string) => <Tag>{value}</Tag>,
             },
             {
-              title: "状态 / Status",
+              title: t("状态", "Status"),
               dataIndex: "enabled",
               width: 150,
               render: (value: boolean) => (
                 <Tag color={value ? "success" : "default"}>
-                  {value ? "已启用 / Enabled" : "已禁用 / Disabled"}
+                  {value ? t("已启用", "Enabled") : t("已禁用", "Disabled")}
                 </Tag>
               ),
             },
             {
-              title: "数据 / Data",
+              title: t("数据", "Data"),
               width: 130,
-              render: (_, task) => (
-                <Typography.Text type="secondary">
-                  {(task.data_locations || []).length
-                    ? `${(task.data_locations || []).length} 个位置`
-                    : "未配置 / Not set"}
-                </Typography.Text>
-              ),
+              render: (_, task) => {
+                const count = task.data_locations?.length || 0;
+                return (
+                  <Typography.Text type="secondary">
+                    {count
+                      ? t(
+                          `${count} 个位置`,
+                          `${count} location${count === 1 ? "" : "s"}`,
+                        )
+                      : t("未配置", "Not set")}
+                  </Typography.Text>
+                );
+              },
             },
             {
-              title: "排序 / Sort",
+              title: t("排序", "Sort"),
               key: "sort",
               width: 100,
               render: (_, task) => {
@@ -407,17 +447,17 @@ export function DiscoveryTaskManagement() {
                   catalog?.tasks.findIndex((t) => t.name === task.name) || 0;
                 return (
                   <Space size={4}>
-                    <Tooltip title="上移 / Move up">
+                    <Tooltip title={t("上移", "Move up")}>
                       <Button
-                        aria-label={`Move up ${task.name}`}
+                        aria-label={`${t("上移", "Move up")} ${task.name}`}
                         icon={<ArrowUpOutlined aria-hidden />}
                         disabled={busy || dirty || filteredOrder || index === 0}
                         onClick={() => move(task, -1)}
                       />
                     </Tooltip>
-                    <Tooltip title="下移 / Move down">
+                    <Tooltip title={t("下移", "Move down")}>
                       <Button
-                        aria-label={`Move down ${task.name}`}
+                        aria-label={`${t("下移", "Move down")} ${task.name}`}
                         icon={<ArrowDownOutlined aria-hidden />}
                         disabled={
                           busy ||
@@ -436,7 +476,9 @@ export function DiscoveryTaskManagement() {
         />
       </Card>
       <Drawer
-        title={creating ? "添加任务 / Add task" : "任务详情 / Task details"}
+        title={
+          creating ? t("添加任务", "Add task") : t("任务详情", "Task details")
+        }
         open={open}
         size="min(850px, 100vw)"
         onClose={() =>
@@ -446,7 +488,7 @@ export function DiscoveryTaskManagement() {
           })
         }
         forceRender
-        extra={dirty && <Tag color="orange">未保存 / Unsaved</Tag>}
+        extra={dirty && <Tag color="orange">{t("未保存", "Unsaved")}</Tag>}
         footer={
           <Space style={{ width: "100%", justifyContent: "space-between" }}>
             <span>
@@ -457,7 +499,7 @@ export function DiscoveryTaskManagement() {
                   disabled={busy}
                   onClick={remove}
                 >
-                  删除任务 / Delete task
+                  {t("删除任务", "Delete task")}
                 </Button>
               )}
             </span>
@@ -471,7 +513,7 @@ export function DiscoveryTaskManagement() {
                   })
                 }
               >
-                取消 / Cancel
+                {t("取消", "Cancel")}
               </Button>
               <Button
                 type="primary"
@@ -479,18 +521,22 @@ export function DiscoveryTaskManagement() {
                 loading={busy}
                 onClick={() => form.submit()}
               >
-                保存任务 / Save task
+                {t("保存任务", "Save task")}
               </Button>
             </Space>
           </Space>
         }
       >
-        {notice?.error && (
+        {notice && "error" in notice && (
           <Alert
             className="admin-notice"
             type="error"
             showIcon
-            title={<span role="status">{notice.text}</span>}
+            title={
+              <span role="status">
+                <NoticeText notice={notice} />
+              </span>
+            }
           />
         )}
         <Form
@@ -523,8 +569,12 @@ export function DiscoveryTaskManagement() {
                         type="info"
                         title={
                           <>
-                            数据准备提示词可使用 <code>{"{inputs}"}</code>{" "}
-                            插入文件名；其他花括号会原样保留。
+                            {t("数据准备提示词可使用", "Use")}{" "}
+                            <code>{"{inputs}"}</code>{" "}
+                            {t(
+                              "插入文件名；其他花括号会原样保留。",
+                              "to insert filenames into the preparation prompt. Other braces are kept as written.",
+                            )}
                           </>
                         }
                       />
@@ -533,7 +583,10 @@ export function DiscoveryTaskManagement() {
                       <Alert
                         className="admin-form-note"
                         type="info"
-                        title="公式摘要支持 Markdown 和 LaTeX，仅用于样例卡片展示。"
+                        title={t(
+                          "公式摘要支持 Markdown 和 LaTeX，仅用于样例卡片展示。",
+                          "Formula summaries support Markdown and LaTeX and appear on the sample cards.",
+                        )}
                       />
                     )}
                     <div
@@ -550,14 +603,21 @@ export function DiscoveryTaskManagement() {
                           rules={[
                             {
                               required: required.has(key),
-                              message: "请填写此项 / Required",
+                              message: (
+                                <LiveText zh="请填写此项" en="Required" />
+                              ),
                             },
                             ...(key === "name"
                               ? [
                                   {
                                     pattern:
                                       /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,
-                                    message: "使用字母、数字、下划线或短横线",
+                                    message: (
+                                      <LiveText
+                                        zh="使用字母、数字、下划线或短横线"
+                                        en="Use letters, digits, underscores or hyphens."
+                                      />
+                                    ),
                                   },
                                 ]
                               : []),
@@ -565,13 +625,13 @@ export function DiscoveryTaskManagement() {
                         >
                           {group.key === "basic" ? (
                             <Input
-                              aria-label={key}
+                              aria-label={label}
                               disabled={key === "name" && !creating}
                               maxLength={key === "name" ? 128 : undefined}
                             />
                           ) : (
                             <Input.TextArea
-                              aria-label={key}
+                              aria-label={label}
                               autoSize={{ minRows: 4, maxRows: 12 }}
                             />
                           )}
@@ -583,7 +643,7 @@ export function DiscoveryTaskManagement() {
               })),
               {
                 key: "data",
-                label: "数据与发布 / Data",
+                label: t("数据与发布", "Data"),
                 forceRender: true,
                 children: (
                   <>
@@ -591,32 +651,41 @@ export function DiscoveryTaskManagement() {
                       className="admin-form-note"
                       type="info"
                       showIcon
-                      title="共享数据以只读方式关联到会话"
-                      description="填写 Harness 中的文件或目录，每行一个。位置必须位于 ASTRAL_SAMPLE_DATA_ROOT 内；未设置时使用 ASTRAL_PROJECT_ROOT/data。启用前需要可读的非空数据。"
+                      title={t(
+                        "共享数据以只读方式关联到会话",
+                        "Shared data is attached to sessions as read-only",
+                      )}
+                      description={t(
+                        "填写 Harness 中的文件或目录，每行一个。位置必须位于 ASTRAL_SAMPLE_DATA_ROOT 内；未设置时使用 ASTRAL_PROJECT_ROOT/data。启用前需要可读的非空数据。",
+                        "Enter one Harness file or directory per line. Paths must be under ASTRAL_SAMPLE_DATA_ROOT, which defaults to ASTRAL_PROJECT_ROOT/data. Enabling the task requires readable, nonempty data.",
+                      )}
                     />
                     <Form.Item
                       name="data_locations"
-                      label="数据位置 / Data locations"
+                      label={t("数据位置", "Data locations")}
                     >
                       <Input.TextArea
-                        aria-label="data_locations"
+                        aria-label={t("数据位置", "Data locations")}
                         autoSize={{ minRows: 4, maxRows: 10 }}
                         placeholder="Gaia/study/observations.csv"
                       />
                     </Form.Item>
                     <Form.Item
                       name="files"
-                      label="参考文件名 / Reference file names"
-                      extra="每行一个，仅作说明，不会自动挂载。"
+                      label={t("参考文件名", "Reference file names")}
+                      extra={t(
+                        "每行一个，仅作说明，不会自动挂载。",
+                        "Enter one name per line for reference. These files are not mounted automatically.",
+                      )}
                     >
                       <Input.TextArea
-                        aria-label="files"
+                        aria-label={t("参考文件名", "Reference file names")}
                         autoSize={{ minRows: 2, maxRows: 6 }}
                       />
                     </Form.Item>
                     <Form.Item name="enabled" valuePropName="checked">
-                      <Checkbox aria-label="enabled">
-                        启用此任务 / Enabled
+                      <Checkbox aria-label={t("启用此任务", "Enabled")}>
+                        {t("启用此任务", "Enabled")}
                       </Checkbox>
                     </Form.Item>
                   </>

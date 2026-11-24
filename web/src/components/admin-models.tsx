@@ -1,4 +1,10 @@
 "use client";
+import {
+  useManagementText,
+  LiveText,
+  NoticeText,
+  type Notice,
+} from "./management-text";
 
 import { useEffect, useState } from "react";
 import {
@@ -54,6 +60,7 @@ const initial: ModelForm = {
 };
 
 export function AdminModels() {
+  const t = useManagementText();
   const { modal } = App.useApp();
   const [form] = Form.useForm<ModelForm>();
   const provider = Form.useWatch("provider", form);
@@ -63,10 +70,7 @@ export function AdminModels() {
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
-  const [notice, setNotice] = useState<{
-    text: string;
-    error?: boolean;
-  } | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   async function refresh() {
     setLoading(true);
     try {
@@ -74,7 +78,7 @@ export function AdminModels() {
         (await api("models")).models.filter((m: ModelSummary) => m.shared),
       );
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      setNotice({ error: String(e) });
     } finally {
       setLoading(false);
     }
@@ -100,9 +104,9 @@ export function AdminModels() {
       return;
     }
     modal.confirm({
-      title: "放弃未保存的修改？ / Discard changes?",
-      okText: "放弃修改 / Discard",
-      cancelText: "继续编辑 / Keep editing",
+      title: <LiveText zh="放弃未保存的修改？" en="Discard changes?" />,
+      okText: <LiveText zh="放弃修改" en="Discard" />,
+      cancelText: <LiveText zh="继续编辑" en="Keep editing" />,
       onOk: () => {
         form.setFieldValue("api_key", "");
         setOpen(false);
@@ -128,28 +132,28 @@ export function AdminModels() {
       setDirty(false);
       setOpen(false);
       await refresh();
-      setNotice({ text: "已保存 / Saved" });
+      setNotice({ success: "saved" });
     } catch (e) {
-      setNotice({ text: String(e), error: true });
+      setNotice({ error: String(e) });
     } finally {
       setBusy(false);
     }
   }
   function remove(model: ModelSummary) {
     modal.confirm({
-      title: "删除共享模型配置？ / Delete shared model?",
+      title: <LiveText zh="删除共享模型配置？" en="Delete shared model?" />,
       content: model.name,
-      okText: "确认删除 / Delete",
+      okText: <LiveText zh="确认删除" en="Delete" />,
       okButtonProps: { danger: true },
-      cancelText: "取消 / Cancel",
+      cancelText: <LiveText zh="取消" en="Cancel" />,
       onOk: async () => {
         setBusy(true);
         try {
           await api(`models/${model.id}`, "DELETE");
           await refresh();
-          setNotice({ text: "已删除 / Deleted" });
+          setNotice({ success: "deleted" });
         } catch (e) {
-          setNotice({ text: String(e), error: true });
+          setNotice({ error: String(e) });
           throw e;
         } finally {
           setBusy(false);
@@ -162,9 +166,14 @@ export function AdminModels() {
       <div className="admin-page-heading">
         <div>
           <Typography.Title level={2}>
-            共享模型 / Shared models
+            {t("共享模型", "Shared models")}
           </Typography.Title>
-          <p>发布供用户选择的模型配置，完整管理供应商、Endpoint 与凭据。</p>
+          <p>
+            {t(
+              "发布供用户选择的模型配置，完整管理供应商、Endpoint 与凭据。",
+              "Publish model configurations and manage their providers, endpoints and credentials.",
+            )}
+          </p>
         </div>
         <Space>
           <Button
@@ -172,31 +181,41 @@ export function AdminModels() {
             disabled={busy}
             onClick={refresh}
           >
-            刷新 / Reload
+            {t("刷新", "Reload")}
           </Button>
           <Button
             type="primary"
             icon={<PlusOutlined aria-hidden />}
             onClick={() => edit(null)}
           >
-            添加共享模型 / Add model
+            {t("添加共享模型", "Add model")}
           </Button>
         </Space>
       </div>
       {notice && !open && (
         <Alert
           className="admin-notice"
-          type={notice.error ? "error" : "success"}
+          type={"error" in notice ? "error" : "success"}
           showIcon
-          title={<span role="status">{notice.text}</span>}
+          title={
+            <span role="status">
+              <NoticeText notice={notice} />
+            </span>
+          }
         />
       )}
       <Alert
         className="admin-notice"
         type="info"
         showIcon
-        title="共享默认配置可被个人配置整组覆盖"
-        description="密钥不会回显；编辑时留空可保留原有密钥。个人配置失败时不会自动切换到共享付费配置。"
+        title={t(
+          "共享默认配置可被个人配置整组覆盖",
+          "Personal configurations can override the shared defaults",
+        )}
+        description={t(
+          "密钥不会回显；编辑时留空可保留原有密钥。个人配置失败时不会自动切换到共享付费配置。",
+          "Keys are hidden. Leave the key blank when editing to keep it. If a personal configuration fails, the platform will not switch to a shared paid configuration.",
+        )}
       />
       <Card>
         <Table<ModelSummary>
@@ -207,7 +226,7 @@ export function AdminModels() {
           pagination={{ pageSize: 10, hideOnSinglePage: true }}
           columns={[
             {
-              title: "配置名称 / Name",
+              title: t("配置名称", "Name"),
               dataIndex: "name",
               render: (name: string, model) => (
                 <Space orientation="vertical" size={2}>
@@ -219,33 +238,39 @@ export function AdminModels() {
                     {name}
                   </Button>
                   {model.isDefault && (
-                    <Tag color="blue">共享默认 / Default</Tag>
+                    <Tag color="blue">{t("共享默认", "Default")}</Tag>
                   )}
                 </Space>
               ),
             },
             {
-              title: "供应商 / Provider",
+              title: t("供应商", "Provider"),
               dataIndex: "provider",
-              render: (value: string) => <Tag>{value}</Tag>,
+              render: (value: string) => (
+                <Tag>
+                  {value === "compatible"
+                    ? t("兼容接口", "Compatible API")
+                    : value}
+                </Tag>
+              ),
             },
-            { title: "模型 / Model", dataIndex: "model" },
+            { title: t("模型", "Model"), dataIndex: "model" },
             {
-              title: "Endpoint",
+              title: t("端点地址", "Endpoint"),
               dataIndex: "endpoint",
               render: (value: string) => (
                 <span className="admin-table-endpoint">
-                  {value || "供应商默认 / Provider default"}
+                  {value || t("供应商默认", "Provider default")}
                 </span>
               ),
             },
             {
-              title: "密钥 / Key",
+              title: t("密钥", "Key"),
               key: "key",
-              render: () => <Tag color="success">已设置 / Set</Tag>,
+              render: () => <Tag color="success">{t("已设置", "Set")}</Tag>,
             },
             {
-              title: "操作 / Actions",
+              title: t("操作", "Actions"),
               key: "actions",
               render: (_, model) => (
                 <Button
@@ -255,7 +280,7 @@ export function AdminModels() {
                   disabled={busy}
                   onClick={() => remove(model)}
                 >
-                  删除 / Delete
+                  {t("删除", "Delete")}
                 </Button>
               ),
             },
@@ -266,14 +291,16 @@ export function AdminModels() {
         open={open}
         size="min(680px, 100vw)"
         title={
-          editing ? "编辑共享模型 / Edit model" : "添加共享模型 / Add model"
+          editing
+            ? t("编辑共享模型", "Edit model")
+            : t("添加共享模型", "Add model")
         }
         onClose={close}
         forceRender
         footer={
           <Space style={{ width: "100%", justifyContent: "flex-end" }}>
             <Button onClick={close} disabled={busy}>
-              取消 / Cancel
+              {t("取消", "Cancel")}
             </Button>
             <Button
               type="primary"
@@ -281,16 +308,20 @@ export function AdminModels() {
               loading={busy}
               onClick={() => form.submit()}
             >
-              保存模型 / Save model
+              {t("保存模型", "Save model")}
             </Button>
           </Space>
         }
       >
-        {notice?.error && (
+        {notice && "error" in notice && (
           <Alert
             className="admin-notice"
             type="error"
-            title={<span role="status">{notice.text}</span>}
+            title={
+              <span role="status">
+                <NoticeText notice={notice} />
+              </span>
+            }
             showIcon
           />
         )}
@@ -303,75 +334,134 @@ export function AdminModels() {
         >
           <Form.Item
             name="name"
-            label="配置名称 / Name"
-            rules={[{ required: true, max: 100 }]}
+            label={t("配置名称", "Name")}
+            rules={[
+              {
+                required: true,
+                max: 100,
+                message: (
+                  <LiveText
+                    zh="请输入名称（最多 100 个字符）"
+                    en="Enter a name of up to 100 characters."
+                  />
+                ),
+              },
+            ]}
           >
-            <Input aria-label="Model configuration name" />
+            <Input aria-label={t("模型配置名称", "Model configuration name")} />
           </Form.Item>
           <Form.Item
             name="provider"
-            label="供应商 / Provider"
-            rules={[{ required: true }]}
+            label={t("供应商", "Provider")}
+            rules={[
+              {
+                required: true,
+                message: (
+                  <LiveText zh="请填写此项" en="This field is required." />
+                ),
+              },
+            ]}
           >
             <Select
               virtual={false}
-              aria-label="Model provider"
-              options={providers.map((p) => ({ value: p, label: p }))}
+              aria-label={t("模型供应商", "Model provider")}
+              options={providers.map((p) => ({
+                value: p,
+                label: p === "compatible" ? t("兼容接口", "Compatible API") : p,
+              }))}
             />
           </Form.Item>
           <Form.Item
             name="model"
             label={
-              provider === "azure" ? "部署名 / Deployment" : "模型名称 / Model"
+              provider === "azure"
+                ? t("部署名", "Deployment")
+                : t("模型名称", "Model")
             }
-            rules={[{ required: true, max: 256 }]}
+            rules={[
+              {
+                required: true,
+                max: 256,
+                message: (
+                  <LiveText
+                    zh="请输入模型标识（最多 256 个字符）"
+                    en="Enter a model identifier of up to 256 characters."
+                  />
+                ),
+              },
+            ]}
           >
-            <Input aria-label="Model identifier" />
+            <Input aria-label={t("模型标识", "Model identifier")} />
           </Form.Item>
           <Form.Item
             name="endpoint"
-            label="Endpoint"
+            label={t("端点地址", "Endpoint")}
             rules={[
-              { required: provider === "azure" },
               {
-                validator: (_, value) =>
-                  !value || /^https?:\/\//.test(value)
-                    ? Promise.resolve()
-                    : Promise.reject(new Error("请输入 HTTP/HTTPS 地址")),
+                required: provider === "azure",
+                message: (
+                  <LiveText zh="请填写此项" en="This field is required." />
+                ),
+              },
+              {
+                pattern: /^https?:\/\//,
+                message: (
+                  <LiveText
+                    zh="请输入 HTTP/HTTPS 地址"
+                    en="Enter an HTTP or HTTPS address."
+                  />
+                ),
               },
             ]}
           >
             <Input
-              aria-label="Model endpoint"
+              aria-label={t("模型端点地址", "Model endpoint")}
               placeholder="https://example.com/v1"
             />
           </Form.Item>
           {provider === "azure" && (
             <Form.Item
               name="api_version"
-              label="API Version"
-              rules={[{ required: true }]}
+              label={t("API 版本", "API Version")}
+              rules={[
+                {
+                  required: true,
+                  message: (
+                    <LiveText zh="请填写此项" en="This field is required." />
+                  ),
+                },
+              ]}
             >
-              <Input aria-label="API Version" />
+              <Input aria-label={t("API 版本", "API Version")} />
             </Form.Item>
           )}
           <Form.Item
             name="api_key"
-            label="API Key"
-            rules={[{ required: !editing }]}
+            label={t("API 密钥", "API Key")}
+            rules={[
+              {
+                required: !editing,
+                message: (
+                  <LiveText zh="请填写此项" en="This field is required." />
+                ),
+              },
+            ]}
             extra={
               editing
-                ? "留空保留当前密钥 / Leave empty to keep existing key"
-                : "密钥加密保存，不会通过普通接口返回。"
+                ? t("留空保留当前密钥", "Leave empty to keep existing key")
+                : t(
+                    "密钥加密保存，不会通过普通接口返回。",
+                    "Keys are stored encrypted and are never returned by the standard API.",
+                  )
             }
           >
             <Input.Password
-              aria-label="Model API key"
+              aria-label={t("模型 API 密钥", "Model API key")}
               autoComplete="new-password"
             />
           </Form.Item>
           <Form.Item name="isDefault" valuePropName="checked">
-            <Checkbox>设为共享默认配置 / Shared default</Checkbox>
+            <Checkbox>{t("设为共享默认配置", "Shared default")}</Checkbox>
           </Form.Item>
         </Form>
       </Drawer>

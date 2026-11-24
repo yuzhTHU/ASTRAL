@@ -1,4 +1,6 @@
 "use client";
+import { LocalizedForm } from "./localized-form";
+import { useManagementText, NoticeText, type Notice } from "./management-text";
 import { useState } from "react";
 import { api, type ModelSummary } from "@/lib/client";
 const initial = {
@@ -20,18 +22,27 @@ export function ModelManager({
   admin: boolean;
   refresh: () => Promise<void>;
 }) {
+  const t = useManagementText();
   const [form, setForm] = useState(initial),
     [editing, setEditing] = useState(""),
-    [message, setMessage] = useState("");
+    [notice, setNotice] = useState<Notice | null>(null);
   return (
     <section>
-      <h2>Model configurations / 模型配置</h2>
-      <p>Key 与 Endpoint 成组使用。个人配置失败时不会切换到共享账户。</p>
+      <h2>{t("模型配置", "Model configurations")}</h2>
+      <p>
+        {t(
+          "密钥和端点地址配套使用。个人配置失败时不会切换到共享账户。",
+          "Keys and endpoints are used together. If a personal configuration fails, the platform will not switch to a shared account.",
+        )}
+      </p>
       {models.map((m) => (
         <article className="card" key={m.id}>
           <strong>{m.name}</strong>
           <span>
-            {m.provider} · {m.model} {m.shared ? " · Shared / 共享" : ""}{" "}
+            {m.provider === "compatible"
+              ? t("兼容接口", "Compatible API")
+              : m.provider}{" "}
+            · {m.model} {m.shared ? ` · ${t("共享", "Shared")}` : ""}{" "}
             {m.isDefault ? " ★" : ""}
           </span>
           <small>{m.endpoint}</small>
@@ -47,7 +58,7 @@ export function ModelManager({
               });
             }}
           >
-            Edit / 编辑
+            {t("编辑", "Edit")}
           </button>
           <button
             disabled={m.shared && !admin}
@@ -56,15 +67,15 @@ export function ModelManager({
                 await api(`models/${m.id}`, "DELETE");
                 await refresh();
               } catch (e) {
-                setMessage(String(e));
+                setNotice({ error: String(e) });
               }
             }}
           >
-            Delete / 删除
+            {t("删除", "Delete")}
           </button>
         </article>
       ))}
-      <form
+      <LocalizedForm
         onSubmit={async (e) => {
           e.preventDefault();
           try {
@@ -80,19 +91,19 @@ export function ModelManager({
             setForm(initial);
             setEditing("");
             await refresh();
-            setMessage("Saved / 已保存");
+            setNotice({ success: "saved" });
           } catch (e) {
-            setMessage(String(e));
+            setNotice({ error: String(e) });
           }
         }}
       >
         <h3>
           {editing
-            ? "Edit configuration / 编辑配置"
-            : "Add configuration / 新增配置"}
+            ? t("编辑配置", "Edit configuration")
+            : t("新增配置", "Add configuration")}
         </h3>
         <label>
-          Name / 名称
+          {t("名称", "Name")}
           <input
             required
             value={form.name}
@@ -100,7 +111,7 @@ export function ModelManager({
           />
         </label>
         <label>
-          Provider / 供应商
+          {t("供应商", "Provider")}
           <select
             value={form.provider}
             onChange={(e) => setForm({ ...form, provider: e.target.value })}
@@ -115,12 +126,14 @@ export function ModelManager({
               "gemini",
               "lmstudio",
             ].map((p) => (
-              <option key={p}>{p}</option>
+              <option key={p} value={p}>
+                {p === "compatible" ? t("兼容接口", "Compatible API") : p}
+              </option>
             ))}
           </select>
         </label>
         <label>
-          Model / 模型
+          {t("模型", "Model")}
           <input
             required
             value={form.model}
@@ -128,7 +141,7 @@ export function ModelManager({
           />
         </label>
         <label>
-          Endpoint
+          {t("端点地址", "Endpoint")}
           <input
             type="url"
             value={form.endpoint}
@@ -136,13 +149,13 @@ export function ModelManager({
           />
         </label>
         <label>
-          API Key
+          {t("API 密钥", "API Key")}
           <input
             type="password"
             autoComplete="off"
             required={!editing}
             placeholder={
-              editing ? "Leave empty to keep current key / 留空保留" : ""
+              editing ? t("留空保留", "Leave empty to keep current key") : ""
             }
             value={form.api_key}
             onChange={(e) => setForm({ ...form, api_key: e.target.value })}
@@ -150,7 +163,7 @@ export function ModelManager({
         </label>
         {form.provider === "azure" && (
           <label>
-            API Version
+            {t("API 版本", "API Version")}
             <input
               value={form.api_version}
               onChange={(e) =>
@@ -166,7 +179,7 @@ export function ModelManager({
               checked={form.shared}
               onChange={(e) => setForm({ ...form, shared: e.target.checked })}
             />
-            Shared / 发布为共享配置
+            {t("发布为共享配置", "Shared")}
           </label>
         )}
         <label>
@@ -175,9 +188,9 @@ export function ModelManager({
             checked={form.isDefault}
             onChange={(e) => setForm({ ...form, isDefault: e.target.checked })}
           />
-          Default / 默认配置
+          {t("默认配置", "Default")}
         </label>
-        <button className="primary">Save / 保存</button>
+        <button className="primary">{t("保存", "Save")}</button>
         <button
           type="button"
           onClick={() => {
@@ -185,10 +198,10 @@ export function ModelManager({
             setForm(initial);
           }}
         >
-          Cancel / 取消
+          {t("取消", "Cancel")}
         </button>
-        <p role="status">{message}</p>
-      </form>
+        <p role="status">{notice && <NoticeText notice={notice} />}</p>
+      </LocalizedForm>
     </section>
   );
 }

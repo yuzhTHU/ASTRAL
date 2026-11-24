@@ -275,7 +275,7 @@ async function handler(
         });
       if (method === "POST") {
         const values = z
-          .object({ name: z.string().max(100).default("Unnamed Conversation") })
+          .object({ name: z.string().max(100).optional() })
           .parse(await body(request));
         const entity = await createConversation(
           user,
@@ -306,7 +306,11 @@ async function handler(
             if (id && !visible.some((m) => m.id === id))
               throw new ApiError(404, "Model not found");
         }
-        await repository.update(entity, { ...entity.data, ...values });
+        await repository.update(entity, {
+          ...entity.data,
+          ...values,
+          ...(values.name !== undefined ? { defaultName: false } : {}),
+        });
         return json({ ok: true });
       }
       const sid = await ensureHarness(entity);

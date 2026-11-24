@@ -5,6 +5,8 @@ import { Avatar, Button, ConfigProvider, Dropdown, theme } from "antd";
 import { DownOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api } from "@/lib/client";
 
+import { localizedError, useUiLanguage } from "./ui-language";
+
 export function UserAccountMenu({
   username,
   workbench = false,
@@ -31,7 +33,9 @@ export function UserAccountMenu({
     });
     return () => observer.disconnect();
   }, [workbench]);
-  const label = `用户菜单 / User menu: ${username}`;
+  const language = useUiLanguage();
+  const en = language === "en";
+  const label = en ? `User menu: ${username}` : `用户菜单：${username}`;
   const content = (
     <Dropdown
       open={open}
@@ -44,7 +48,13 @@ export function UserAccountMenu({
           {
             key: "logout",
             icon: <LogoutOutlined aria-hidden />,
-            label: busy ? "正在退出… / Logging out" : "退出登录 / Logout",
+            label: busy
+              ? en
+                ? "Logging out…"
+                : "正在退出…"
+              : en
+                ? "Logout"
+                : "退出登录",
             disabled: busy,
             danger: true,
           },
@@ -52,7 +62,9 @@ export function UserAccountMenu({
             ? [
                 {
                   key: "error",
-                  label: <span role="alert">{error}</span>,
+                  label: (
+                    <span role="alert">{localizedError(error, language)}</span>
+                  ),
                   disabled: true,
                 },
               ]

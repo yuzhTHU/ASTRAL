@@ -1,73 +1,112 @@
 // Layout and controls ported from the original ASTRAL workbench.
+import { LanguageButton } from "../language-button";
+
+// The viewer controller owns these labels after hydration, including in an iframe.
+function label(en: string, zh: string) {
+  return { "data-tree-en": en, "data-tree-zh": zh, children: zh };
+}
+
+function attribute(name: string, en: string, zh: string) {
+  return {
+    "data-tree-en": en,
+    "data-tree-zh": zh,
+    "data-tree-attribute": name,
+    [name]: zh,
+  };
+}
+
 export function TreeMarkup() {
   return (
     <>
       <header>
-        <h1>{"ASTRAL Search Viewer"}</h1>
-        <button id={"refresh"}>{"Refresh"}</button>
-        <button id={"home"}>{"Home"}</button>
+        <h1 {...label("ASTRAL Search Viewer", "ASTRAL 搜索树查看器")} />
+        <LanguageButton />
+        <button id={"refresh"} {...label("Refresh", "刷新")} />
+        <button id={"home"} {...label("Home", "回到根节点")} />
         <span id={"status"} className={"muted"}></span>
-        <div className={"agent-control"} aria-label={"Live agent controls"}>
+        <div
+          className={"agent-control"}
+          {...attribute("aria-label", "Live agent controls", "智能体实时控制")}
+        >
           <input
             id={"guidance"}
-            placeholder={"Send guidance for the next turn…"}
+            {...attribute(
+              "placeholder",
+              "Send guidance for the next turn…",
+              "发送下一轮的指导意见…",
+            )}
           />
-          <button id={"send-guidance"}>{"Send"}</button>
-          <button id={"pause-agent"}>{"Pause"}</button>
-          <button id={"stop-agent"} className={"danger"}>
-            {"Stop"}
-          </button>
-          <span id={"agent-status"} className={"muted"}>
-            {"agent: running"}
-          </span>
+          <button id={"send-guidance"} {...label("Send", "发送")} />
+          <button id={"pause-agent"} {...label("Pause", "暂停")} />
+          <button
+            id={"stop-agent"}
+            className={"danger"}
+            {...label("Stop", "停止")}
+          />
+          <span
+            id={"agent-status"}
+            className={"muted"}
+            {...label("agent: running", "智能体：运行中")}
+          />
         </div>
       </header>
       <main>
-        <nav id={"run-panel"} className={"run-panel"} aria-label={"Runs"}>
+        <nav
+          id={"run-panel"}
+          className={"run-panel"}
+          {...attribute("aria-label", "Runs", "运行记录")}
+        >
           <div
             className={"run-tabs"}
             role={"tablist"}
-            aria-label={"Left panel"}
+            {...attribute("aria-label", "Left panel", "左侧面板")}
           >
             <button
               id={"runs-tab"}
               className={"run-tab active"}
               type={"button"}
               data-run-tab={"runs"}
-            >
-              {"\n        Runs\n      "}
-            </button>
+              {...label("Runs", "运行记录")}
+            />
             <button
               id={"controls-tab"}
               className={"run-tab"}
               type={"button"}
               data-run-tab={"controls"}
-            >
-              {"\n        Controls\n      "}
-            </button>
+              {...label("Controls", "显示设置")}
+            />
           </div>
           <div id={"runs-panel"} className={"run-tab-panel"}>
             <div id={"run-panel-header"} className={"run-panel-header"}>
               <span className={"run-toggle"}></span>
-              <span className={"run-panel-title"}>{"Runs"}</span>
+              <span
+                className={"run-panel-title"}
+                {...label("Runs", "运行记录")}
+              />
             </div>
             <div id={"run-tree"} className={"run-tree"}></div>
           </div>
           <div id={"controls-panel"} className={"run-tab-panel hidden"}>
             <div className={"display-controls"}>
               <div className={"control-actions"}>
-                <button id={"layout"} type={"button"}>
-                  {"Auto Layout"}
-                </button>
-                <button id={"weak-edges"} type={"button"}>
-                  {"Hide Weak Edges"}
-                </button>
-                <button id={"labels"} type={"button"}>
-                  {"Hide Labels"}
-                </button>
+                <button
+                  id={"layout"}
+                  type={"button"}
+                  {...label("Auto Layout", "自动布局")}
+                />
+                <button
+                  id={"weak-edges"}
+                  type={"button"}
+                  {...label("Hide Weak Edges", "隐藏弱连接")}
+                />
+                <button
+                  id={"labels"}
+                  type={"button"}
+                  {...label("Hide Labels", "隐藏标签")}
+                />
               </div>
               <label className={"control-bar"}>
-                <span>{"Node"}</span>
+                <span {...label("Node", "节点大小")} />
                 <input
                   id={"node-size"}
                   type={"range"}
@@ -81,7 +120,7 @@ export function TreeMarkup() {
                 </span>
               </label>
               <label className={"control-bar"}>
-                <span>{"Gap"}</span>
+                <span {...label("Gap", "层间距")} />
                 <input
                   id={"level-gap"}
                   type={"range"}
@@ -95,7 +134,7 @@ export function TreeMarkup() {
                 </span>
               </label>
               <label className={"control-bar"}>
-                <span>{"Horiz"}</span>
+                <span {...label("Horiz", "横向缩放")} />
                 <input
                   id={"horizontal-scale"}
                   type={"range"}
@@ -110,22 +149,36 @@ export function TreeMarkup() {
               </label>
               <div className={"color-control"}>
                 <label className={"color-control-row"}>
-                  <span>{"Color"}</span>
-                  <select id={"color-metric"} aria-label={"Color metric"}>
+                  <span {...label("Color", "颜色")} />
+                  <select
+                    id={"color-metric"}
+                    {...attribute("aria-label", "Color metric", "着色指标")}
+                  >
                     <option value={"r2"}>{"R2"}</option>
                     <option value={"mse"}>{"MSE"}</option>
                     <option value={"rmse"}>{"RMSE"}</option>
                     <option value={"smape"}>{"SMAPE"}</option>
                     <option value={"mape"}>{"MAPE"}</option>
                     <option value={"mae"}>{"MAE"}</option>
-                    <option value={"spearman_r"}>{"Spearman r"}</option>
-                    <option value={"pearson_r"}>{"Pearson r"}</option>
+                    <option
+                      value={"spearman_r"}
+                      {...label("Spearman r", "斯皮尔曼相关系数")}
+                    />
+                    <option
+                      value={"pearson_r"}
+                      {...label("Pearson r", "皮尔逊相关系数")}
+                    />
                   </select>
                 </label>
                 <div className={"color-control-row"}>
                   <span className={"range-pair"}>
                     <input
                       id={"r2-color-min"}
+                      {...attribute(
+                        "aria-label",
+                        "Color scale minimum",
+                        "着色下限",
+                      )}
                       type={"range"}
                       min={"0"}
                       max={"1"}
@@ -134,6 +187,11 @@ export function TreeMarkup() {
                     />
                     <input
                       id={"r2-color-max"}
+                      {...attribute(
+                        "aria-label",
+                        "Color scale maximum",
+                        "着色上限",
+                      )}
                       type={"range"}
                       min={"0"}
                       max={"1"}
@@ -149,7 +207,11 @@ export function TreeMarkup() {
                     type={"number"}
                     step={"0.001"}
                     defaultValue={"0"}
-                    aria-label={"R2 color minimum"}
+                    {...attribute(
+                      "aria-label",
+                      "Color scale minimum",
+                      "着色下限",
+                    )}
                   />
                   <span>{"~"}</span>
                   <input
@@ -158,19 +220,28 @@ export function TreeMarkup() {
                     type={"number"}
                     step={"0.001"}
                     defaultValue={"1"}
-                    aria-label={"R2 color maximum"}
+                    {...attribute(
+                      "aria-label",
+                      "Color scale maximum",
+                      "着色上限",
+                    )}
                   />
                 </div>
               </div>
               <div className={"export-row"}>
-                <select id={"export-format"} aria-label={"Export format"}>
+                <select
+                  id={"export-format"}
+                  {...attribute("aria-label", "Export format", "导出格式")}
+                >
                   <option value={"png"}>{"PNG"}</option>
                   <option value={"svg"}>{"SVG"}</option>
                   <option value={"pdf"}>{"PDF"}</option>
                 </select>
-                <button id={"export"} type={"button"}>
-                  {"Export"}
-                </button>
+                <button
+                  id={"export"}
+                  type={"button"}
+                  {...label("Export", "导出")}
+                />
               </div>
             </div>
           </div>
@@ -178,55 +249,69 @@ export function TreeMarkup() {
         <div
           id={"run-resizer"}
           className={"run-resizer"}
-          title={"Drag to resize runs panel"}
+          {...attribute(
+            "title",
+            "Drag to resize runs panel",
+            "拖动以调整运行记录面板大小",
+          )}
         >
           <div className={"run-resizer-tabs"}>
             <button
               className={"run-resizer-tab active"}
               type={"button"}
               data-run-tab={"runs"}
-            >
-              {"\n        Runs\n      "}
-            </button>
+              {...label("Runs", "运行记录")}
+            />
             <button
               className={"run-resizer-tab"}
               type={"button"}
               data-run-tab={"controls"}
-            >
-              {"\n        Controls\n      "}
-            </button>
+              {...label("Controls", "显示设置")}
+            />
           </div>
         </div>
         <section id={"graph-wrap"}>
           <div id={"legend"} className={"legend"}>
             <strong id={"legend-title"}>
               <span className={"legend-toggle"}></span>
-              <span>{"Legend"}</span>
+              <span {...label("Legend", "图例")} />
             </strong>
             <div className={"legend-body"}>
               <div className={"legend-row"}>
                 <span className={"sample node-dot"}></span>
-                <span>
-                  {"Node: one sampled step (R, C, L, K) in the search tree."}
-                </span>
+                <span
+                  {...label(
+                    "Node: one sampled step (R, C, L, K) in the search tree.",
+                    "节点：搜索树中的一个采样步骤（R、C、L、K）。",
+                  )}
+                />
               </div>
               <div className={"legend-row"}>
                 <span className={"sample line"}></span>
-                <span>{"Solid edge: primary conversation continuation."}</span>
+                <span
+                  {...label(
+                    "Solid edge: primary conversation continuation.",
+                    "实线：主对话的延续。",
+                  )}
+                />
               </div>
               <div className={"legend-row"}>
                 <span className={"sample line weak"}></span>
-                <span>
-                  {"Dashed edge: shared tool outputs from a sibling sample."}
-                </span>
+                <span
+                  {...label(
+                    "Dashed edge: shared tool outputs from a sibling sample.",
+                    "虚线：兄弟采样节点共享的工具输出。",
+                  )}
+                />
               </div>
               <div className={"legend-row"}>
                 <span></span>
-                <span>
-                  {
-                    "Color: node score mapped from red (worse) to green (better) on the\n            selected metric."
-                  }
-                </span>
+                <span
+                  {...label(
+                    "Color: node score mapped from red (worse) to green (better) on the selected metric.",
+                    "颜色：按所选指标的节点得分从红色（较差）到绿色（较好）渐变。",
+                  )}
+                />
               </div>
             </div>
           </div>
@@ -235,62 +320,86 @@ export function TreeMarkup() {
             width={1200}
             height={760}
             role={"img"}
-            aria-label={"Search graph"}
+            {...attribute("aria-label", "Search graph", "搜索树图")}
           ></svg>
         </section>
         <div
           id={"side-resizer"}
           className={"side-resizer"}
-          title={"Drag to resize details panel"}
+          {...attribute(
+            "title",
+            "Drag to resize details panel",
+            "拖动以调整详情面板大小",
+          )}
         ></div>
         <aside>
           <section className={"side-section"}>
-            <strong id={"node-title"}>{"No node selected"}</strong>
+            <strong
+              id={"node-title"}
+              {...label("No node selected", "尚未选择节点")}
+            />
             <div id={"node-subtitle"} className={"muted"}></div>
             <div id={"metrics"} className={"metric-grid"}></div>
           </section>
           <section className={"side-section"}>
-            <strong>{"Formula"}</strong>
-            <div id={"formula-latex"} className={"formula-box muted"}>
-              {"\n        (no candidate formula)\n      "}
-            </div>
+            <strong {...label("Formula", "公式")} />
+            <div
+              id={"formula-latex"}
+              className={"formula-box muted"}
+              {...label("(no candidate formula)", "（暂无候选公式）")}
+            />
             <button
               id={"formula-editor-toggle"}
               className={"formula-editor-toggle"}
               type={"button"}
-            >
-              {"\n        LaTeX editor\n      "}
-            </button>
+              {...label("LaTeX editor", "LaTeX 编辑器")}
+            />
             <div id={"formula-editor"} className={"formula-editor hidden"}>
               <div className={"formula-editor-actions"}>
                 <span id={"formula-editor-status"} className={"muted"}></span>
-                <button id={"copy-latex"} type={"button"}>
-                  {"Copy"}
-                </button>
+                <button
+                  id={"copy-latex"}
+                  type={"button"}
+                  {...label("Copy", "复制")}
+                />
               </div>
               <textarea
                 id={"latex-source"}
                 spellCheck={"false"}
-                aria-label={"LaTeX source"}
+                {...attribute("aria-label", "LaTeX source", "LaTeX 源码")}
                 defaultValue={""}
               ></textarea>
             </div>
             <pre id={"formula-code"} className={"formula-code"}></pre>
           </section>
           <section className={"side-section"}>
-            <strong>{"Preview"}</strong>
+            <strong {...label("Preview", "预览")} />
             <div id={"preview"} className={"preview-chat muted"}></div>
           </section>
           <section className={"side-section"}>
-            <strong>{"Tool Call"}</strong>
+            <strong {...label("Tool Call", "工具调用")} />
             <div id={"tool-call"} className={"tool-grid"}></div>
           </section>
           <section className={"side-section"}>
-            <strong>{"Detail"}</strong>
+            <strong {...label("Detail", "详情")} />
             <div id={"detail"} className={"json-viewer muted"}></div>
           </section>
         </aside>
       </main>
+      <dialog id="tree-command-dialog" aria-labelledby="tree-command-question">
+        <form method="dialog">
+          <label id="tree-command-question" htmlFor="tree-command-answer" />
+          <input id="tree-command-answer" autoComplete="off" />
+          <div className="tree-dialog-actions">
+            <button
+              type="submit"
+              value="confirm"
+              {...label("Confirm", "确认")}
+            />
+            <button type="submit" value="cancel" {...label("Cancel", "取消")} />
+          </div>
+        </form>
+      </dialog>
     </>
   );
 }

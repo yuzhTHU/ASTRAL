@@ -10,7 +10,7 @@ test("ordinary users can inspect but cannot modify shared tool settings", async 
   context,
 }) => {
   await page.goto("/");
-  await page.getByRole("button", { name: "Register / 注册账号" }).click();
+  await page.getByRole("button", { name: "注册账号" }).click();
   await page
     .getByLabel("用户名", { exact: true })
     .fill(`tool-user-${Date.now()}`);
@@ -19,21 +19,19 @@ test("ordinary users can inspect but cannot modify shared tool settings", async 
   await expect(page.locator("html")).toHaveClass(/ui-ready/);
   await page.locator("#account-settings").click();
   const popup = context.waitForEvent("page");
-  await page.getByRole("link", { name: "工具配置 / Tools" }).click();
+  await page.getByRole("link", { name: "工具配置" }).click();
   const tools = await popup;
-  await expect(
-    tools.getByLabel("timeout_seconds", { exact: true }),
-  ).toHaveValue("20");
-  await tools.getByLabel("Configuration scope").click();
+  await expect(tools.getByLabel("请求超时（秒）", { exact: true })).toHaveValue(
+    "20",
+  );
+  await tools.getByLabel("配置范围").click();
   await expect(tools.getByRole("option")).toHaveCount(2);
-  await tools
-    .getByRole("option", { name: "Agent 覆盖 / Agent override", exact: true })
-    .click();
+  await tools.getByRole("option", { name: "Agent 覆盖", exact: true }).click();
   await expect(tools.getByLabel("Configuration session")).toHaveCount(0);
 
   await expect(tools.getByLabel("Configuration session")).toHaveCount(0);
   await expect(
-    tools.getByLabel("timeout_seconds", { exact: true }),
+    tools.getByLabel("请求超时（秒）", { exact: true }),
   ).toBeDisabled();
   for (const path of [
     "tool-configurations/web_fetch",
@@ -54,11 +52,9 @@ test("ordinary users can inspect but cannot modify shared tool settings", async 
     ).toBe(403);
   }
   await tools.close();
-  await page.getByRole("button", { name: "Close account settings" }).click();
-  await page.getByRole("button", { name: /用户菜单 \/ User menu:/ }).click();
-  await page
-    .getByRole("menuitem", { name: "退出登录 / Logout", exact: true })
-    .click();
+  await page.getByRole("button", { name: "关闭账号设置" }).click();
+  await page.getByRole("button", { name: /用户菜单：/ }).click();
+  await page.getByRole("menuitem", { name: "退出登录", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "登录", exact: true }),
   ).toBeVisible();
@@ -88,8 +84,8 @@ test("shared Agent overrides and global defaults require no research session", a
     ).ok(),
   ).toBeTruthy();
   await page.goto("/tools?scope=session&session=removed");
-  const timeout = page.getByLabel("timeout_seconds", { exact: true });
-  const scope = page.getByLabel("Configuration scope");
+  const timeout = page.getByLabel("请求超时（秒）", { exact: true });
+  const scope = page.getByLabel("配置范围");
   const source = page.getByTestId("configuration-source");
   const save = async (value: string) => {
     await timeout.fill(value);
@@ -98,9 +94,7 @@ test("shared Agent overrides and global defaults require no research session", a
         r.request().method() === "PUT" &&
         r.url().includes("/tool-configurations/"),
     );
-    await page
-      .getByRole("button", { name: "保存配置 / Save configuration" })
-      .click();
+    await page.getByRole("button", { name: "保存配置", exact: true }).click();
     const result = await response;
     expect(result.ok()).toBeTruthy();
     return result.json();
@@ -113,13 +107,13 @@ test("shared Agent overrides and global defaults require no research session", a
   await expect(page.getByRole("option")).toHaveCount(2);
   await page.keyboard.press("Escape");
   await expect(page).not.toHaveURL(/session=/);
-  await choose(page, "proxy_mode", "custom");
+  await choose(page, "连接方式", "自定义代理");
   await page
-    .getByLabel("proxy_url", { exact: true })
+    .getByLabel("代理地址", { exact: true })
     .fill("http://proxy.test:8899");
   await save("2.5");
   await expect(source).toContainText("全局默认值");
-  await choose(page, "Configuration scope", "Agent 覆盖 / Agent override");
+  await choose(page, "配置范围", "Agent 覆盖");
   await expect(timeout).toHaveValue("2.5");
   await expect(page.getByLabel("Configuration session")).toHaveCount(0);
   const saved = await save("7.5");
@@ -134,25 +128,23 @@ test("shared Agent overrides and global defaults require no research session", a
   });
   await page.reload();
   await expect(timeout).toHaveValue("7.5");
-  await page.getByLabel("Tool test target").fill("https://example.com/science");
-  await page
-    .getByRole("button", { name: "测试已保存配置 / Test saved configuration" })
-    .click();
+  await page.getByLabel("测试目标").fill("https://example.com/science");
+  await page.getByRole("button", { name: "测试已保存配置" }).click();
   await expect(page.getByTestId("tool-test-result")).toContainText("连接成功");
-  await choose(page, "Configuration agent", "符号回归 / Search");
+  await choose(page, "配置的 Agent", "符号回归");
   await expect(timeout).toHaveValue("2.5");
-  await choose(page, "Configurable tool", "web_search");
+  await choose(page, "可配置工具", "web_search");
   await expect(timeout).toHaveValue("15");
-  await choose(page, "Configurable tool", "web_fetch");
-  await choose(page, "Configuration scope", "全局默认值 / Global defaults");
+  await choose(page, "可配置工具", "web_fetch");
+  await choose(page, "配置范围", "全局默认值");
   await expect(timeout).toHaveValue("2.5");
   await save("9.5");
-  await choose(page, "Configuration scope", "Agent 覆盖 / Agent override");
-  await choose(page, "Configuration agent", "数据准备 / Data preparation");
+  await choose(page, "配置范围", "Agent 覆盖");
+  await choose(page, "配置的 Agent", "数据准备");
   await expect(timeout).toHaveValue("7.5");
   await page
     .getByRole("button", {
-      name: "取消覆盖，使用上级默认值 / Inherit defaults",
+      name: "取消覆盖，使用上级默认值",
     })
     .click();
   await expect(source).toContainText("全局默认值");
@@ -160,12 +152,10 @@ test("shared Agent overrides and global defaults require no research session", a
   expect(
     (await (await page.request.get("/api/conversations")).json()).conversations,
   ).toEqual([]);
-  await choose(page, "Configuration scope", "全局默认值 / Global defaults");
+  await choose(page, "配置范围", "全局默认值");
   await expect(
-    page.getByRole("button", { name: "恢复内置默认值 / Reset defaults" }),
+    page.getByRole("button", { name: "恢复内置默认值" }),
   ).toBeEnabled();
-  await page
-    .getByRole("button", { name: "恢复内置默认值 / Reset defaults" })
-    .click();
+  await page.getByRole("button", { name: "恢复内置默认值" }).click();
   await expect(source).toContainText("内置默认值");
 });

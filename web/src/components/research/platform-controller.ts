@@ -1,8 +1,18 @@
 // @ts-nocheck
 // Original ASTRAL interaction controller; React owns its mount and disposal.
+import {
+  getUiLanguage,
+  localizedError,
+  setUiLanguage,
+  subscribeUiLanguage,
+} from "../ui-language";
 import { researchRuntime } from "./runtime";
 import { researchTransport } from "./transport";
 import { modelProfiles } from "./model-profiles";
+import {
+  capabilityDescription,
+  capabilityParameterDescription,
+} from "./capability-descriptions";
 export function mountPlatform(
   root: HTMLElement,
   manage: () => void,
@@ -37,6 +47,8 @@ export function mountPlatform(
     shownSessionErrors = new Set();
   let inferredActivity = { phase: "idle", since: Date.now() / 1000 },
     lastStatusAt = 0,
+    connectionFailure = null,
+    eventSyncFailure = null,
     lastEventsAt = 0,
     lastCoord = {},
     latestContext = null,
@@ -79,6 +91,8 @@ export function mountPlatform(
     plotMode = localStorage.getItem("sr-harness-plot-mode") || "table",
     heatmapChannels = { row: [], column: [], color: "", z: "" },
     plotPreview = null,
+    plotFailure = null,
+    plotRequest = 0,
     plotPreviewToken = 0,
     heatmapPreview = null,
     heatmapPreviewToken = 0,
@@ -92,6 +106,7 @@ export function mountPlatform(
     serverSessionGeneration = 0;
   const DEFAULT_PROBLEM_DESCRIPTION =
     "Find an interpretable formula explaining the selected target from the selected features.";
+  let usesDefaultProblem = true;
   let promptDefaults = {
       problem_description: DEFAULT_PROBLEM_DESCRIPTION,
       system_prompt: "",
@@ -134,16 +149,10 @@ export function mountPlatform(
         ) || 0,
       ),
     );
-  const SUPPORTED_LOCALES = ["zh-CN", "en"],
-    DEFAULT_LOCALE = "en",
-    LOCALE_ALIASES = { zh: "zh-CN", en: "en" };
-  const storedLocale = localStorage.getItem("sr-harness-language"),
-    normalizedLocale = LOCALE_ALIASES[storedLocale] || storedLocale;
+  const DEFAULT_LOCALE = "en";
   const legacyMarkdownMode =
     localStorage.getItem("sr-harness-markdown") === "true";
-  let currentLocale = SUPPORTED_LOCALES.includes(normalizedLocale)
-      ? normalizedLocale
-      : "zh-CN",
+  let currentLocale = getUiLanguage() === "en" ? "en" : "zh-CN",
     uiTheme =
       localStorage.getItem("sr-harness-theme") === "dark" ? "dark" : "light",
     markdownModes = Object.fromEntries(
@@ -209,7 +218,7 @@ export function mountPlatform(
       overview: "总览",
       fullViewer: "完整查看器 ↗",
       candidates: "候选公式",
-      records: "RECORDS",
+      records: "条记录",
       emptyCandidates: "尚无候选公式。",
       candidateHint: "搜索过程中评估得到的候选公式与各项指标将显示在此处。",
       pause: "暂停",
@@ -317,7 +326,7 @@ export function mountPlatform(
       followBaseModel: "跟随基础模型",
       toolParser: "工具调用格式",
       maxTokens: "输出上限（留空自动）",
-      apiKey: "API Key",
+      apiKey: "API 密钥",
       apiKeyShow: "显示",
       apiKeyHide: "隐藏",
       apiKeyConfigured: "已配置；输入新值可替换",
@@ -468,8 +477,8 @@ export function mountPlatform(
       dataAgentSettingsTitle: "数据准备设置",
       dataAgentSettingsSubtitle: "修改后下一轮 Agent 回复时生效",
       dataAgentSettingsHint: "修改后下一轮Agent回复时生效",
-      dataAgentProvider: "Provider",
-      dataAgentModel: "Model",
+      dataAgentProvider: "服务商",
+      dataAgentModel: "模型",
       dataAgentProxy: "代理",
       dataAgentProxyPlaceholder: "例如 http://127.0.0.1:7890；留空表示不使用",
       dataAgentModelTest: "测试",
@@ -1256,6 +1265,83 @@ export function mountPlatform(
     conversationEmpty: "No chats yet.",
     conversationNamePlaceholder: "Enter a chat name",
   });
+  Object.assign(MESSAGE_CATALOGS["zh-CN"], {
+    defaultProblem: "寻找一个可解释的公式，用选定的特征解释目标变量。",
+    channelHue: "颜色",
+    channelSize: "大小",
+    channelRow: "行",
+    channelColumn: "列",
+    channelMap: "颜色映射",
+    validationSplit: "验证集",
+    trainSplit: "训练集",
+    unnamedConversation: "未命名对话",
+    accountSettings: "账户与模型配置",
+    promptResize: "调整用户提示词输入区域高度",
+    treeFrame: "Agent 搜索树",
+    candidateScope: "候选公式范围",
+    paretoFront: "帕累托前沿",
+    topCandidates: "排名前列",
+    settingsSections: "设置分类",
+    evaluatorSource: "评测器 Python 源码",
+    evaluatorChoice: "选择评测器",
+    readOnlyConversation: "只读对话",
+    automatic: "自动",
+    parserText: "文本",
+    parserNative: "OpenAI 原生格式",
+    resizeNamedPanel: "调整{{name}}宽度",
+    maxInteractionSteps: "最大交互轮数",
+    loadStudy: "加载研究：{{name}}",
+    discoveryTitle: "选择科学发现任务",
+    discoveryHelp: "选择一项研究，开始探索。",
+    discoveryUnavailable: "数据尚未就绪",
+    discoveryChecking: "正在检查任务数据…",
+    discoveryEmpty: "暂无启用的样例任务，请联系管理员配置。",
+    discoveryMounting: "正在只读加载数据…",
+    discoveryReady:
+      "已只读加载数据并填入各阶段提示词。请先整理数据，再构建并确认评测器。",
+    modelBadge: "服务商：{{provider}}\n模型：{{model}}",
+    expandDirectory: "展开{{name}}",
+    collapseDirectory: "折叠{{name}}",
+  });
+  Object.assign(MESSAGE_CATALOGS["en"], {
+    defaultProblem: DEFAULT_PROBLEM_DESCRIPTION,
+    channelHue: "HUE",
+    channelSize: "SIZE",
+    channelRow: "ROW",
+    channelColumn: "COL",
+    channelMap: "MAP",
+    validationSplit: "Validation",
+    trainSplit: "Training",
+    unnamedConversation: "Unnamed Conversation",
+    accountSettings: "Account and models",
+    promptResize: "Resize the user prompt field",
+    treeFrame: "Agent search tree",
+    candidateScope: "Candidate formula scope",
+    paretoFront: "Pareto front",
+    topCandidates: "Top K",
+    settingsSections: "Settings sections",
+    evaluatorSource: "Evaluator Python source",
+    evaluatorChoice: "Select evaluator",
+    readOnlyConversation: "Read-only chat",
+    automatic: "Auto",
+    parserText: "Text",
+    parserNative: "OpenAI Native",
+    resizeNamedPanel: "Resize {{name}} panel",
+    maxInteractionSteps: "Maximum interaction steps",
+    loadStudy: "Load study: {{name}}",
+    discoveryTitle: "Scientific discovery tasks",
+    discoveryHelp: "Choose a study to begin.",
+    discoveryUnavailable: "Data unavailable",
+    discoveryChecking: "Checking data…",
+    discoveryEmpty:
+      "No sample tasks are enabled. Contact an administrator to configure them.",
+    discoveryMounting: "Mounting read-only inputs…",
+    discoveryReady:
+      "Read-only inputs and stage-specific prompts are ready. Prepare the data, then build and confirm the evaluator before searching.",
+    modelBadge: "Provider: {{provider}}\nModel: {{model}}",
+    expandDirectory: "Expand {{name}}",
+    collapseDirectory: "Collapse {{name}}",
+  });
   function _(key, values = {}) {
     const baseLocale = currentLocale.split("-")[0],
       catalog =
@@ -1272,6 +1358,44 @@ export function mountPlatform(
     return String(message).replace(/\{\{\s*([\w]+)\s*\}\}/g, (_, name) =>
       values[name] === undefined ? "{{" + name + "}}" : String(values[name]),
     );
+  }
+  // Keep a renderer on the element that owns the UI copy. Removed cards can
+  // be collected, and user content never participates in translation.
+  const languageBindings = new WeakMap();
+  function bindLanguage(node, render, property = "label") {
+    let bindings = languageBindings.get(node);
+    if (!bindings) {
+      bindings = new Map();
+      languageBindings.set(node, bindings);
+      node.dataset.localize = "";
+    }
+    bindings.set(property, render);
+    render();
+  }
+  function setLocalizedText(node, text) {
+    if (typeof text === "function") {
+      bindLanguage(
+        node,
+        () => {
+          node.textContent = text();
+        },
+        "text",
+      );
+    } else {
+      languageBindings.get(node)?.delete("text");
+      node.textContent = text;
+    }
+  }
+  function localizedUiError(render) {
+    const error = new Error(render());
+    error.localizedMessage = render;
+    return error;
+  }
+  function setLocalizedLabel(node, getLabel) {
+    bindLanguage(node, () => {
+      node.title = getLabel();
+      node.setAttribute("aria-label", node.title);
+    });
   }
   function setText(selector, key, values) {
     const node = document.querySelector(selector);
@@ -1374,6 +1498,10 @@ export function mountPlatform(
           ?.querySelector("span");
       if (label) label.textContent = _(key);
     }
+    for (const option of $("stop-guard-split").options)
+      option.textContent = _(
+        option.value === "train" ? "trainSplit" : "validationSplit",
+      );
     setText("#pause-on-truncation-label", "pauseOnTruncation");
     setText("#pause-on-truncation-help", "pauseOnTruncationHelp");
     setText("#stop-guard-larger-label", "stopGuardLargerBetter");
@@ -1543,7 +1671,7 @@ export function mountPlatform(
   }
   function renderHeaderControls() {
     if (!session) {
-      $("connection").textContent = _("connection");
+      renderActivity();
       $("status").textContent = _("connection");
       return;
     }
@@ -1606,7 +1734,7 @@ export function mountPlatform(
     link.target = "_blank";
     link.rel = "noopener";
     link.textContent = _("apiKeyGet", { env: envVar });
-    $("api-key-label").replaceChildren("API Key (", link, ")");
+    $("api-key-label").replaceChildren(_("apiKey") + " (", link, ")");
   }
   function renderApiKeyVisibility() {
     const button = $("api-key-visibility"),
@@ -1630,7 +1758,7 @@ export function mountPlatform(
     link.target = "_blank";
     link.rel = "noopener";
     link.textContent = _("apiKeyGet", { env: envVar });
-    $("data-api-key-label").replaceChildren("API Key (", link, ")");
+    $("data-api-key-label").replaceChildren(_("apiKey") + " (", link, ")");
   }
   function renderDataApiKeyVisibility() {
     const button = $("data-api-key-visibility"),
@@ -1644,27 +1772,29 @@ export function mountPlatform(
     button.setAttribute("aria-pressed", String(visible));
   }
   function renderDemoPickerLanguage() {
-    $("demo-picker-title").textContent =
-      currentLocale === "en"
-        ? "Scientific discovery tasks"
-        : "选择科学发现任务";
-    $("demo-picker-help").textContent =
-      currentLocale === "en"
-        ? "Choose a study to begin."
-        : "选择一项研究，开始探索。";
+    $("demo-picker-title").textContent = _("discoveryTitle");
+    $("demo-picker-help").textContent = _("discoveryHelp");
     $("demo-picker-close").setAttribute("aria-label", _("settingsClose"));
     $("create-demo").title = $("demo-picker-title").textContent;
   }
   function applyLanguage() {
     document.documentElement.lang = currentLocale;
     document.title = _("appTitle");
-    localStorage.setItem("sr-harness-language", currentLocale);
+    for (const node of root.querySelectorAll("[data-localize]"))
+      languageBindings.get(node)?.forEach((render) => render());
+    for (const node of root.querySelectorAll("[data-aria-key]"))
+      node.setAttribute("aria-label", _(node.dataset.ariaKey));
+    $("tree").title = _("treeFrame");
+    profiles.renderLanguage();
+    if (discoveryTasks.length && $("demo-picker").open) renderDiscoveryTasks();
     renderDemoPickerLanguage();
     renderMarkdownModeButtons();
     configureTreeControls();
-    setTreeStatus(treeStatusKey, treeStatusValues);
+    if (treeStatusKey) setTreeStatus(treeStatusKey, treeStatusValues);
     $("follow").textContent = _("followLatest");
     renderLocalizedTimelineText();
+    for (const progress of root.querySelectorAll(".stream-progress"))
+      updateStreamProgress(progress);
     updateDocumentationLinks();
     renderHeaderControls();
     renderTimelineWelcome();
@@ -1672,6 +1802,12 @@ export function mountPlatform(
     renderConversationLanguage();
     if ($("model-test")) $("model-test").textContent = _("dataAgentModelTest");
     for (const [id, key] of [
+      ["close-preview", "settingsClose"],
+      ["cancel-delete-file", "settingsCancel"],
+      ["confirm-delete-file", "deleteItem"],
+      ["candidate-topk", "topCandidates"],
+      ["candidate-pareto", "paretoFront"],
+      ["evaluator-args-title", "evaluatorArgsTitle"],
       ["workspace-title", "workspace"],
       ["drop-title", "dropTitle"],
       ["upload", "chooseFile"],
@@ -1772,8 +1908,10 @@ export function mountPlatform(
     setText("#data-upload-help-suffix", "uploadDataHelpSuffix");
     setText("#data-drop-copy", "dataDropCopy");
     setText("#data-table-title", "csvData");
-    setText("#data-refresh-label", "refreshData");
-    const dataRefreshLabel = _("refreshData");
+    const dataRefreshLabel = _(
+      $("data-refresh").disabled ? "refreshingData" : "refreshData",
+    );
+    $("data-refresh-label").textContent = dataRefreshLabel;
     $("data-refresh").title = dataRefreshLabel;
     $("data-refresh").setAttribute("aria-label", dataRefreshLabel);
     setText("#data-agent-title", "dataAgentTitle");
@@ -1806,6 +1944,19 @@ export function mountPlatform(
     for (const value of document.querySelectorAll(".plot-slot-value"))
       value.dataset.placeholder = _("dropVariable");
     $("problem-description").placeholder = _("taskProblemPlaceholder");
+    if (usesDefaultProblem) {
+      $("problem-description").defaultValue = _("defaultProblem");
+      $("problem-description").value = _("defaultProblem");
+    }
+    $("data-model").placeholder = _("dataAgentModel");
+    document
+      .querySelector("#provider")
+      .closest("label")
+      .querySelector("span").textContent = _("dataAgentProvider");
+    document
+      .querySelector("#model")
+      .closest("label")
+      .querySelector("span").textContent = _("dataAgentModel");
     $("data-agent-input").placeholder = _("dataAgentPlaceholder");
     $("data-proxy").placeholder = _("dataAgentProxyPlaceholder");
     const dataSendLabel = _("dataAgentSend");
@@ -1836,8 +1987,20 @@ export function mountPlatform(
       $("workspace-name-input").placeholder = _(
         workspaceEditItem ? "renamePrompt" : "newFolderPrompt",
       );
-    filesSignature = "";
-    refreshFiles().catch(notice);
+    for (const id of [
+      "max-tokens",
+      "data-max-tokens",
+      "evaluator-agent-max-tokens",
+    ])
+      $(id).placeholder = _("automatic");
+    for (const id of [
+      "tool-parser",
+      "data-tool-parser",
+      "evaluator-agent-tool-parser",
+    ]) {
+      $(id).querySelector('[value="text"]').textContent = _("parserText");
+      $(id).querySelector('[value="openai"]').textContent = _("parserNative");
+    }
     updateCapabilityCounts();
     renderApiKeyVisibility();
     renderSearchSettingLabels();
@@ -1854,15 +2017,28 @@ export function mountPlatform(
       languageLabel = _("languageSwitch");
     languageButton.textContent = _("languageSwitchShort");
     languageButton.title = languageLabel;
+    languageButton.lang = currentLocale === "en" ? "zh-CN" : "en";
     languageButton.setAttribute("aria-label", languageLabel);
-    renderVariableRoleTable();
+    if ($("variable-role-body").children.length) {
+      localizeVariableRoleTable();
+      renderVariableRolePreview();
+    } else renderVariableRoleTable();
+    renderComposerControl();
+    renderDataAgentControl();
+    if (session) renderSessionMessages(session);
+    else $("data-agent-state").textContent = _("dataAgentReady");
     renderPlotVariablePalette();
     renderPlotSlots();
     renderPlotModeLanguage();
     renderDataNumberFormatControls();
     renderDataPreviewGroupPicker();
-    renderDataTable();
-    renderActivePlot();
+    // Graph labels are bound in place. Keep the current graph viewport and
+    // avoid recomputing its layout when only the language changed.
+    if (
+      plotMode !== "structure" ||
+      !$("tensor-preview").querySelector(".relation-viewport")
+    )
+      renderActivePlot();
     const visibleContext = selectedContextKey
       ? contextHistory.get(selectedContextKey)
       : latestContext;
@@ -1872,7 +2048,6 @@ export function mountPlatform(
     }
     applyTheme();
     applyPanelLayout();
-    $("topk").dataset.sig = "";
     renderTopk();
     renderTimelineSurface();
     renderWorkflowNextControls();
@@ -1934,11 +2109,12 @@ export function mountPlatform(
       input.value = item.name;
       input.checked = enabled.has(item.name);
       input.onchange = onchange;
-      copy.append(
-        el("span", item.name, "capability-name"),
-        el("span", item.description || "", "capability-description"),
-      );
-      label.title = item.description || item.name;
+      const description = el("span", undefined, "capability-description");
+      copy.append(el("span", item.name, "capability-name"), description);
+      bindLanguage(label, () => {
+        description.textContent = capabilityDescription(item, getUiLanguage());
+        label.title = description.textContent || item.name;
+      });
       label.append(input, copy);
       host.append(label);
     }
@@ -2095,7 +2271,7 @@ export function mountPlatform(
       status = $("data-model-test-status");
     button.disabled = true;
     status.className = "model-test-status";
-    status.textContent = _("dataAgentModelTesting");
+    setLocalizedText(status, () => _("dataAgentModelTesting"));
     try {
       await saveDataProviderCredential();
       const result = await api(
@@ -2103,16 +2279,18 @@ export function mountPlatform(
         dataAgentSettingsPayload(),
       );
       status.classList.add(result.ok ? "passed" : "failed");
-      status.textContent = _(
-        result.ok
-          ? "dataAgentModelTestPassed"
-          : result.accessible
-            ? "dataAgentModelTestPartial"
-            : "dataAgentModelTestUnavailable",
+      setLocalizedText(status, () =>
+        _(
+          result.ok
+            ? "dataAgentModelTestPassed"
+            : result.accessible
+              ? "dataAgentModelTestPartial"
+              : "dataAgentModelTestUnavailable",
+        ),
       );
     } catch (error) {
       status.classList.add("failed");
-      status.textContent = error?.message || String(error);
+      setLocalizedText(status, () => localizedError(error, getUiLanguage()));
     } finally {
       button.disabled = false;
     }
@@ -2151,21 +2329,23 @@ export function mountPlatform(
       status = $("model-test-status");
     button.disabled = true;
     status.className = "model-test-status";
-    status.textContent = _("dataAgentModelTesting");
+    setLocalizedText(status, () => _("dataAgentModelTesting"));
     try {
       await saveProviderCredential();
       const result = await api("/api/session/test", settingsPayload());
       status.classList.add(result.ok ? "passed" : "failed");
-      status.textContent = _(
-        result.ok
-          ? "dataAgentModelTestPassed"
-          : result.accessible
-            ? "dataAgentModelTestPartial"
-            : "dataAgentModelTestUnavailable",
+      setLocalizedText(status, () =>
+        _(
+          result.ok
+            ? "dataAgentModelTestPassed"
+            : result.accessible
+              ? "dataAgentModelTestPartial"
+              : "dataAgentModelTestUnavailable",
+        ),
       );
     } catch (error) {
       status.classList.add("failed");
-      status.textContent = error?.message || String(error);
+      setLocalizedText(status, () => localizedError(error, getUiLanguage()));
     } finally {
       button.disabled = false;
     }
@@ -2187,7 +2367,8 @@ export function mountPlatform(
     typeof v === "string" ? v : JSON.stringify(v, null, 2);
   function el(tag, text, cls) {
     const e = document.createElement(tag);
-    if (text !== undefined) e.textContent = text;
+    if (typeof text === "function") setLocalizedText(e, text);
+    else if (text !== undefined) e.textContent = text;
     if (cls) e.className = cls;
     return e;
   }
@@ -2724,7 +2905,7 @@ export function mountPlatform(
     beforeRequest,
   }) {
     const message = input.value.trim();
-    if (!message) throw Error(_("inputRequired"));
+    if (!message) throw localizedUiError(() => _("inputRequired"));
     button.disabled = true;
     if (beforeRequest) beforeRequest();
     try {
@@ -3006,13 +3187,15 @@ export function mountPlatform(
     const status = $("evaluator-status");
     status.className =
       "evaluator-editor-status" + (item?.invalid ? " failed" : "");
-    status.textContent = item?.invalid
-      ? "⚠ " + item.error
-      : item?.abstract
-        ? currentLocale === "en"
-          ? "Abstract reference: choose another Evaluator to create an implementation."
-          : "抽象基类仅供参考；请选择其它 Evaluator 创建具体实现。"
-        : "";
+    setLocalizedText(status, () =>
+      item?.invalid
+        ? "⚠ " + item.error
+        : item?.abstract
+          ? currentLocale === "en"
+            ? "Abstract reference: choose another Evaluator to create an implementation."
+            : "抽象基类仅供参考；请选择其它 Evaluator 创建具体实现。"
+          : "",
+    );
   }
   function renderEvaluatorAvailability() {
     if (!$("evaluator-config-card")) return;
@@ -3069,14 +3252,16 @@ export function mountPlatform(
     });
     const status = $("evaluator-agent-state");
     if (status)
-      status.textContent = _(
-        stopping
-          ? "evaluatorAgentStopping"
-          : running
-            ? "evaluatorAgentWorking"
-            : session?.evaluator_agent_state === "stopped"
-              ? "evaluatorAgentStopped"
-              : "dataAgentReady",
+      setLocalizedText(status, () =>
+        _(
+          stopping
+            ? "evaluatorAgentStopping"
+            : running
+              ? "evaluatorAgentWorking"
+              : session?.evaluator_agent_state === "stopped"
+                ? "evaluatorAgentStopped"
+                : "dataAgentReady",
+        ),
       );
     renderIconAction($("evaluator-save"), _("evaluatorSave"), "save");
   }
@@ -3088,12 +3273,14 @@ export function mountPlatform(
     evaluatorResultSignature = signature;
     if (result.source)
       loadEvaluatorConfiguration(result.custom_file).catch(notice);
-    $("evaluator-status").textContent = _(
-      result.status === "stopped"
-        ? "evaluatorAgentStopped"
-        : result.status === "failed"
-          ? "eventModelError"
-          : "evaluatorSaved",
+    setLocalizedText($("evaluator-status"), () =>
+      _(
+        result.status === "stopped"
+          ? "evaluatorAgentStopped"
+          : result.status === "failed"
+            ? "eventModelError"
+            : "evaluatorSaved",
+      ),
     );
     renderEvaluatorAvailability();
   }
@@ -3124,7 +3311,10 @@ export function mountPlatform(
               : document.createElement("input"),
           value = settings[name];
         row.className = "evaluator-arg";
-        copy.append(el("b", name), el("small", _(helpKey)));
+        copy.append(
+          el("b", name),
+          el("small", () => _(helpKey)),
+        );
         control.id = "evaluator-arg-" + name.replaceAll("_", "-");
         if (type === "select") {
           control.replaceChildren(
@@ -3162,7 +3352,7 @@ export function mountPlatform(
     const result = await api("/api/session/settings", evaluatorArgsPayload());
     syncSession(result);
     setEvaluatorArgsOpen(false);
-    notice(_("settingsSaved"));
+    notice(() => _("settingsSaved"));
   }
   function setEvaluatorArgsOpen(open) {
     $("evaluator-args-panel").hidden = !open;
@@ -3245,13 +3435,13 @@ export function mountPlatform(
     $("evaluator-guide").title = _("evaluatorGuide");
     $("evaluator-guide").setAttribute("aria-label", _("evaluatorGuide"));
     $("evaluator-agent-settings-toggle").title = _("settingsToggle");
-    $("evaluator-agent-max-steps-label").textContent =
-      currentLocale === "en" ? "Maximum interaction steps" : "最大交互轮数";
+    $("evaluator-agent-max-steps-label").textContent = _("maxInteractionSteps");
     $("evaluator-agent-input").placeholder = _("evaluatorAgentPlaceholder");
     $("evaluator-agent-proxy").placeholder = _("dataAgentProxyPlaceholder");
     renderEvaluatorAgentApiKeyVisibility();
     updateEvaluatorCapabilityCounts();
-    if (!$("evaluator-args-panel").hidden) renderEvaluatorArgs();
+    $("evaluator-select").setAttribute("aria-label", _("evaluatorChoice"));
+    $("evaluator-code").setAttribute("aria-label", _("evaluatorSource"));
     if (evaluatorConfiguration) {
       const selected = $("evaluator-select").value;
       $("evaluator-select").replaceChildren(
@@ -3302,14 +3492,14 @@ export function mountPlatform(
       evaluatorConfiguration = { ...evaluatorConfiguration, ...result };
       evaluatorDirty = false;
       status.classList.add("passed");
-      status.textContent = _("evaluatorSaved");
+      setLocalizedText(status, () => _("evaluatorSaved"));
       renderEvaluatorLanguage();
       $("evaluator-select").value = result.selected;
       renderWorkflowNextControls();
       return result;
     } catch (error) {
       status.classList.add("failed");
-      status.textContent = error?.message || String(error);
+      setLocalizedText(status, () => localizedError(error, getUiLanguage()));
       throw error;
     }
   }
@@ -3318,28 +3508,31 @@ export function mountPlatform(
       status = $("evaluator-status");
     button.disabled = true;
     status.className = "evaluator-editor-status";
-    status.textContent = _("evaluatorTesting");
+    setLocalizedText(status, () => _("evaluatorTesting"));
     try {
       const result = await api("/api/evaluator/test", evaluatorPayload());
       const metrics = result.result?.data_split_results?.train?.metrics || {};
       status.classList.add("passed");
-      status.textContent =
-        _("evaluatorTestPassed") +
-        " · " +
-        Object.entries(metrics)
-          .filter(([key]) => ["mse", "r2", "complexity"].includes(key))
-          .map(
-            ([key, value]) =>
-              key +
-              "=" +
-              (typeof value === "number" && Number.isFinite(value)
-                ? Number(value.toPrecision(4))
-                : String(value)),
-          )
-          .join(" · ");
+      setLocalizedText(
+        status,
+        () =>
+          _("evaluatorTestPassed") +
+          " · " +
+          Object.entries(metrics)
+            .filter(([key]) => ["mse", "r2", "complexity"].includes(key))
+            .map(
+              ([key, value]) =>
+                key +
+                "=" +
+                (typeof value === "number" && Number.isFinite(value)
+                  ? Number(value.toPrecision(4))
+                  : String(value)),
+            )
+            .join(" · "),
+      );
     } catch (error) {
       status.classList.add("failed");
-      status.textContent = error?.message || String(error);
+      setLocalizedText(status, () => localizedError(error, getUiLanguage()));
     } finally {
       button.disabled = false;
     }
@@ -3418,7 +3611,7 @@ export function mountPlatform(
       ),
     );
     await setEvaluatorAgentSettingsOpen(false);
-    notice(
+    notice(() =>
       credential
         ? _("apiKeySaved", { env: credential.env_var })
         : _(queued ? "settingsQueued" : "settingsSaved"),
@@ -3429,7 +3622,7 @@ export function mountPlatform(
       status = $("evaluator-agent-model-test-status");
     button.disabled = true;
     status.className = "model-test-status";
-    status.textContent = _("dataAgentModelTesting");
+    setLocalizedText(status, () => _("dataAgentModelTesting"));
     try {
       await saveEvaluatorAgentCredential();
       const result = await api(
@@ -3437,16 +3630,18 @@ export function mountPlatform(
         evaluatorAgentSettingsPayload(),
       );
       status.classList.add(result.ok ? "passed" : "failed");
-      status.textContent = _(
-        result.ok
-          ? "dataAgentModelTestPassed"
-          : result.accessible
-            ? "dataAgentModelTestPartial"
-            : "dataAgentModelTestUnavailable",
+      setLocalizedText(status, () =>
+        _(
+          result.ok
+            ? "dataAgentModelTestPassed"
+            : result.accessible
+              ? "dataAgentModelTestPartial"
+              : "dataAgentModelTestUnavailable",
+        ),
       );
     } catch (error) {
       status.classList.add("failed");
-      status.textContent = error?.message || String(error);
+      setLocalizedText(status, () => localizedError(error, getUiLanguage()));
     } finally {
       button.disabled = false;
     }
@@ -3474,15 +3669,19 @@ export function mountPlatform(
       meta = el("div", undefined, "meta"),
       time = el(
         "span",
-        new Date(Number(timestamp) * 1000).toLocaleTimeString(currentLocale),
+        () =>
+          new Date(Number(timestamp) * 1000).toLocaleTimeString(currentLocale),
         "meta-time",
       );
     if (kind === "user") {
-      meta.append(eventBadge("user", _("eventUser")), time);
+      meta.append(
+        eventBadge("user", () => _("eventUser")),
+        time,
+      );
       card.append(meta);
       previewBlock(card, payload.content || "", "message-preview-block");
     } else if (kind === "assistant") {
-      meta.append(eventBadge("agent", _("eventAgent")));
+      meta.append(eventBadge("agent", () => _("eventAgent")));
       const badge = modelBadge(payload.provider, payload.model);
       if (badge) meta.append(badge);
       meta.append(time);
@@ -3493,46 +3692,54 @@ export function mountPlatform(
       );
       if (payload.content)
         previewBlock(card, payload.content, "message-preview-block", true);
-      toolCallsBlock(card, payload.tool_calls);
+      toolCallsBlock(card, payload.tool_calls, payload.tool_schemas);
     } else {
       meta.append(
         eventBadge(
           "tool",
-          _(failed ? "eventToolError" : "eventTool"),
+          () => _(failed ? "eventToolError" : "eventTool"),
           failed || resultFailed,
         ),
-        el(
-          "span",
-          payload.call?.name || payload.tool || "Tool",
-          "tool-event-name",
+        describe(
+          el(
+            "span",
+            payload.call?.name || payload.tool || (() => _("eventTool")),
+            "tool-event-name",
+          ),
+          payload.tool_schema?.description ||
+            payload.tool_schema?.function?.description,
         ),
         el(
           "span",
-          _(failed ? "toolFailed" : "toolReturned"),
+          () => _(failed ? "toolFailed" : "toolReturned"),
           "tool-state" + (failed ? " failed" : ""),
         ),
         time,
       );
-      card.append(meta, el("div", _("callParameters"), "tool-caption"));
+      card.append(
+        meta,
+        el("div", () => _("callParameters"), "tool-caption"),
+      );
       const parameters = toolParameters(
+        payload.call?.name || payload.tool || "",
         payload.call?.params || {},
-        undefined,
+        payload.tool_schema,
         true,
       );
       parameters.classList.add("tool-event-params");
       card.append(
         parameters,
-        el("div", _(failed ? "errorInfo" : "result"), "tool-caption"),
+        el("div", () => _(failed ? "errorInfo" : "result"), "tool-caption"),
       );
       previewBlock(
         card,
-        payload.result?.result_str || _("toolNoText"),
+        () => payload.result?.result_str || _("toolNoText"),
         "tool-result-block",
       );
       if (payload.result?.result !== undefined) {
         const raw = el("details", undefined, "raw-json tool-result-raw");
         raw.append(
-          el("summary", _("rawJson")),
+          el("summary", () => _("rawJson")),
           el("pre", pretty(payload.result.result)),
         );
         card.append(raw);
@@ -3551,7 +3758,9 @@ export function mountPlatform(
         request: (message) => api("/api/evaluator/agent/start", { message }),
         render: renderEvaluatorAgentControl,
         beforeRequest: () =>
-          ($("evaluator-status").textContent = _("evaluatorAgentWorking")),
+          setLocalizedText($("evaluator-status"), () =>
+            _("evaluatorAgentWorking"),
+          ),
       });
     if (control.action) {
       const result = await api("/api/evaluator/agent/stop", {});
@@ -3559,15 +3768,21 @@ export function mountPlatform(
       if (result.cancellation_error) notice(result.cancellation_error);
     }
   }
-  function describe(element, description) {
+  function describe(element, description, name = element.textContent) {
     if (description) {
       element.classList.add("has-description");
-      element.dataset.description = description;
       element.tabIndex = 0;
-      element.setAttribute(
-        "aria-label",
-        `${element.textContent}：${description}`,
-      );
+      bindLanguage(element, () => {
+        const text = capabilityDescription(
+          { name, description },
+          getUiLanguage(),
+        );
+        element.dataset.description = text;
+        element.setAttribute(
+          "aria-label",
+          element.textContent + (currentLocale === "en" ? ": " : "：") + text,
+        );
+      });
     }
     return element;
   }
@@ -3601,9 +3816,12 @@ export function mountPlatform(
     svg.setAttribute("aria-hidden", "true");
     svg.innerHTML = eventIconPaths[key] || eventIconPaths.event;
     badge.append(svg);
-    badge.dataset.label = label;
+    bindLanguage(badge, () => {
+      const text = typeof label === "function" ? label() : label;
+      badge.dataset.label = text;
+      badge.setAttribute("aria-label", text);
+    });
     badge.tabIndex = 0;
-    badge.setAttribute("aria-label", label);
     return badge;
   }
   const MODEL_BRANDS = [
@@ -3651,12 +3869,17 @@ export function mountPlatform(
   function modelBadge(provider, model) {
     if (!provider && !model) return null;
     const brand = modelBrand(provider, model),
-      badge = el("span", undefined, "model-logo model-logo-" + brand.key),
-      label = "Provider: " + (provider || "—") + "\nModel: " + (model || "—");
-    badge.dataset.label = label;
-    badge.title = label.replace("\n", " · ");
+      badge = el("span", undefined, "model-logo model-logo-" + brand.key);
+    bindLanguage(badge, () => {
+      const label = _("modelBadge", {
+        provider: provider || "—",
+        model: model || "—",
+      });
+      badge.dataset.label = label;
+      badge.title = label.replace("\n", " · ");
+      badge.setAttribute("aria-label", label.replace("\n", ", "));
+    });
     badge.tabIndex = 0;
-    badge.setAttribute("aria-label", label.replace("\n", ", "));
     if (brand.key === "generic") {
       badge.textContent = (brand.name || "AI").slice(0, 2).toUpperCase();
     } else {
@@ -3690,20 +3913,21 @@ export function mountPlatform(
             settings_error: "settings",
             file_uploaded: "file",
           }[kind] || "event";
-    const label = isTool
-      ? _(kind === "tool_error" ? "eventToolError" : "eventTool")
-      : {
-          user: _("eventUser"),
-          assistant: _("eventAgent"),
-          context: _("eventContext"),
-          question: _("eventQuestion"),
-          reply: _("eventReply"),
-          control: _("eventControl"),
-          lifecycle: _("eventRun"),
-          settings_applied: _("eventModelUpdated"),
-          settings_error: _("eventModelError"),
-          file_uploaded: _("eventWorkspace"),
-        }[kind] || kind;
+    const label = () =>
+      isTool
+        ? _(kind === "tool_error" ? "eventToolError" : "eventTool")
+        : {
+            user: _("eventUser"),
+            assistant: _("eventAgent"),
+            context: _("eventContext"),
+            question: _("eventQuestion"),
+            reply: _("eventReply"),
+            control: _("eventControl"),
+            lifecycle: _("eventRun"),
+            settings_applied: _("eventModelUpdated"),
+            settings_error: _("eventModelError"),
+            file_uploaded: _("eventWorkspace"),
+          }[kind] || kind;
     return eventBadge(
       key,
       label,
@@ -3720,12 +3944,15 @@ export function mountPlatform(
       );
     card.dataset.started = e.timestamp;
     const meta = el("div", undefined, "meta"),
-      label = role === "system" ? _("systemPrompt") : _("eventUser");
+      label = () => (role === "system" ? _("systemPrompt") : _("eventUser"));
     meta.append(
       eventBadge(role === "system" ? "settings" : "user", label),
       el(
         "span",
-        new Date(Number(e.timestamp) * 1000).toLocaleTimeString(currentLocale),
+        () =>
+          new Date(Number(e.timestamp) * 1000).toLocaleTimeString(
+            currentLocale,
+          ),
         "meta-time",
       ),
     );
@@ -3771,14 +3998,18 @@ export function mountPlatform(
       );
     return p.message || p.error || p;
   }
-  function eventContent(card, meta, metaTime, value) {
-    const text = typeof value === "string" ? value.trim() : pretty(value);
+  function eventContent(card, meta, metaTime, event) {
+    const read = () => {
+      const value = compactEventContent(event);
+      return typeof value === "string" ? value.trim() : pretty(value);
+    };
+    const text = read();
     if (text && !text.includes("\n") && text.length <= 160) {
       card.classList.add("compact-event");
-      metaTime.before(el("span", text, "meta-event-text"));
+      metaTime.before(el("span", read, "meta-event-text"));
       return;
     }
-    previewBlock(card, value, "message-preview-block");
+    previewBlock(card, read, "message-preview-block");
   }
   function renderGenericEventCard(e, feed) {
     const card = el("article", undefined, "event " + e.kind);
@@ -3787,18 +4018,20 @@ export function mountPlatform(
       stateChanged = e.kind === "state_changed",
       metaTime = el(
         "span",
-        new Date(Number(e.timestamp) * 1000).toLocaleTimeString(currentLocale),
+        () =>
+          new Date(Number(e.timestamp) * 1000).toLocaleTimeString(
+            currentLocale,
+          ),
         "meta-time",
       );
     meta.append(
-      eventBadge(
-        stateChanged ? "run" : "event",
+      eventBadge(stateChanged ? "run" : "event", () =>
         stateChanged ? _("eventRun") : e.kind,
       ),
       metaTime,
     );
     card.append(meta);
-    eventContent(card, meta, metaTime, compactEventContent(e));
+    eventContent(card, meta, metaTime, e);
     feed.append(card);
     feed.hidden = false;
   }
@@ -3854,6 +4087,12 @@ export function mountPlatform(
     }
     return transport.fileURL(url, id);
   }
+  function hasDefaultName(item) {
+    return item.defaultName ?? item.name === "Unnamed Conversation";
+  }
+  function conversationDisplayName(item) {
+    return hasDefaultName(item) ? _("unnamedConversation") : item.name;
+  }
   function renderConversationLanguage() {
     const pairs = [
       ["conversations-panel-tab", "conversations"],
@@ -3871,22 +4110,30 @@ export function mountPlatform(
       button.setAttribute("aria-label", label);
     }
     if ($("conversation-title")) {
-      $("conversation-title").title = _("renameConversation");
-      $("conversation-title").setAttribute(
-        "aria-label",
-        _("renameConversation"),
+      const label = _(
+        conversationState?.read_only
+          ? "readOnlyConversation"
+          : "renameConversation",
       );
+      $("conversation-title").title = label;
+      $("conversation-title").setAttribute("aria-label", label);
     }
-    if ($("conversation-title-input"))
-      $("conversation-title-input").placeholder = _(
-        "conversationNamePlaceholder",
+    if ($("conversation-title-input")) {
+      const item = conversationState?.conversations?.find(
+        (entry) => entry.id === conversationState.selected,
       );
-    renderConversationList();
+      $("conversation-title-input").placeholder =
+        item && hasDefaultName(item)
+          ? conversationDisplayName(item)
+          : _("conversationNamePlaceholder");
+    }
   }
   function updateConversation(item, updated) {
     Object.assign(item, updated);
     if (item.id === conversationState.selected && $("conversation-title"))
-      $("conversation-title").textContent = item.name;
+      setLocalizedText($("conversation-title"), () =>
+        conversationDisplayName(item),
+      );
   }
   async function loadAppVersion() {
     const result = await api("/api/version");
@@ -3896,9 +4143,13 @@ export function mountPlatform(
   function beginConversationListRename(item, row, button) {
     const form = el("form", undefined, "conversation-inline-editor"),
       input = el("input");
-    input.value = item.name;
-    input.placeholder = _("conversationNamePlaceholder");
-    input.setAttribute("aria-label", _("renameConversation"));
+    input.value = hasDefaultName(item) ? "" : item.name;
+    bindLanguage(input, () => {
+      input.placeholder = hasDefaultName(item)
+        ? conversationDisplayName(item)
+        : _("conversationNamePlaceholder");
+      input.setAttribute("aria-label", _("renameConversation"));
+    });
     form.append(input);
     button.hidden = true;
     row.insertBefore(form, row.querySelector(".conversation-item-actions"));
@@ -3911,7 +4162,7 @@ export function mountPlatform(
         if (saving) return;
         saving = true;
         const name = input.value.trim();
-        if (!name || name === item.name) {
+        if (!name || (!hasDefaultName(item) && name === item.name)) {
           close();
           return;
         }
@@ -3954,7 +4205,7 @@ export function mountPlatform(
         String(b.updated_at).localeCompare(String(a.updated_at)),
       );
     if (!items.length) {
-      host.append(el("p", _("conversationEmpty"), "conversation-empty"));
+      host.append(el("p", () => _("conversationEmpty"), "conversation-empty"));
       return;
     }
     for (const item of items) {
@@ -3971,25 +4222,30 @@ export function mountPlatform(
         ),
         icon = el("span", "◌", "conversation-item-icon"),
         copy = el("span", undefined, "conversation-item-copy"),
-        name = el("span", item.name, "conversation-item-name"),
+        name = el(
+          "span",
+          () => conversationDisplayName(item),
+          "conversation-item-name",
+        ),
         time = el(
           "span",
-          new Date(item.updated_at).toLocaleString(currentLocale, {
-            month: "short",
-            day: "numeric",
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          () =>
+            new Date(item.updated_at).toLocaleString(currentLocale, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           "conversation-item-time",
         ),
         actions = el("details", undefined, "conversation-item-actions"),
         summary = el("summary", "⋯"),
         menu = el("div", undefined, "conversation-item-menu"),
-        exportLink = el("a", _("exportConversation")),
-        rename = el("button", _("renameConversation")),
+        exportLink = el("a", () => _("exportConversation")),
+        rename = el("button", () => _("renameConversation")),
         archive = el(
           "button",
-          _("archiveConversation"),
+          () => _("archiveConversation"),
           "conversation-archive-action",
         );
       button.type = "button";
@@ -4006,8 +4262,7 @@ export function mountPlatform(
         setConversationSelection(result.selected);
         location.reload();
       });
-      summary.title = _("conversationMore");
-      summary.setAttribute("aria-label", _("conversationMore"));
+      setLocalizedLabel(summary, () => _("conversationMore"));
       actions.ontoggle = () => {
         if (actions.open)
           for (const other of document.querySelectorAll(
@@ -4060,7 +4315,9 @@ export function mountPlatform(
       (item) => item.id === conversationState.selected,
     );
     if (selected && $("conversation-title"))
-      $("conversation-title").textContent = selected.name;
+      setLocalizedText($("conversation-title"), () =>
+        conversationDisplayName(selected),
+      );
   }
   async function loadConversations() {
     const requestedSelection = selectedConversationId,
@@ -4071,8 +4328,8 @@ export function mountPlatform(
     if (conversationState.read_only) {
       $("new-conversation").hidden = true;
       $("conversation-title").disabled = true;
-      $("conversation-title").title = "Read-only";
     }
+    renderConversationLanguage();
     renderConversationList();
     return conversationState;
   }
@@ -4165,8 +4422,7 @@ export function mountPlatform(
         );
       editor.hidden = true;
       title.hidden = false;
-      if (!item || !name || name === item.name) {
-        if (item) title.textContent = item.name;
+      if (!item || !name || (!hasDefaultName(item) && name === item.name)) {
         titleSaving = false;
         return;
       }
@@ -4179,7 +4435,6 @@ export function mountPlatform(
         updateConversation(item, updated);
         renderConversationList();
       } catch (error) {
-        title.textContent = item.name;
         notice(error);
       } finally {
         titleSaving = false;
@@ -4194,7 +4449,11 @@ export function mountPlatform(
     });
     refreshButton.onclick = guard(loadConversations);
     title.onclick = () => {
-      input.value = title.textContent;
+      const item = conversationState?.conversations?.find(
+        (entry) => entry.id === conversationState.selected,
+      );
+      if (!item) return;
+      input.value = hasDefaultName(item) ? "" : item.name;
       title.hidden = true;
       editor.hidden = false;
       input.focus();
@@ -4207,10 +4466,7 @@ export function mountPlatform(
         input.blur();
       } else if (event.key === "Escape") {
         event.preventDefault();
-        const item = conversationState?.conversations?.find(
-          (entry) => entry.id === conversationState.selected,
-        );
-        input.value = item?.name || title.textContent;
+        input.value = "";
         input.blur();
       }
     };
@@ -4228,7 +4484,11 @@ export function mountPlatform(
 
   let noticeTimer;
   function notice(error) {
-    const message = error?.message || error || "",
+    const message =
+        typeof error === "function"
+          ? error
+          : error?.localizedMessage ||
+            (error && (() => localizedError(error, getUiLanguage()))),
       host = $("toast-stack");
     clearTimeout(noticeTimer);
     host.replaceChildren();
@@ -4237,7 +4497,7 @@ export function mountPlatform(
       text = el("span", message),
       close = el("button", "×");
     close.type = "button";
-    close.title = _("closeNotice");
+    setLocalizedLabel(close, () => _("closeNotice"));
     close.onclick = () => {
       clearTimeout(noticeTimer);
       host.replaceChildren();
@@ -4267,7 +4527,7 @@ export function mountPlatform(
         dataNote("");
         await fn(...args);
       } catch (error) {
-        dataNote(error?.message || error, true);
+        dataNote(error, true);
       }
     };
   }
@@ -4347,7 +4607,7 @@ export function mountPlatform(
     }
     select.onchange = () =>
       loadDataPreviewGroup(select.value).catch((error) =>
-        dataNote(error?.message || error, true),
+        dataNote(error, true),
       );
   }
   function formatDataPreviewValue(value) {
@@ -4632,10 +4892,11 @@ export function mountPlatform(
       svg = svgNode("svg", {
         viewBox: `0 0 ${width} ${height}`,
         role: "img",
-        "aria-label":
-          preview.endpoint_count === 3
-            ? _("hypergraphPreview")
-            : _("graphPreview"),
+        "data-aria-key":
+          preview.endpoint_count === 3 ? "hypergraphPreview" : "graphPreview",
+        "aria-label": _(
+          preview.endpoint_count === 3 ? "hypergraphPreview" : "graphPreview",
+        ),
       }),
       defs = svgNode("defs"),
       marker = svgNode("marker", {
@@ -4962,8 +5223,7 @@ export function mountPlatform(
     host.append(stage);
     enableRelationViewport(stage, svg, viewport, width, height);
     const legend = el("div", undefined, "relation-legend"),
-      count = el(
-        "span",
+      count = el("span", () =>
         _("relationPreviewCount", {
           nodes: nodes.length,
           relations: coordinates.length,
@@ -4974,13 +5234,15 @@ export function mountPlatform(
       const meaning = el("span");
       meaning.append(
         el("i", undefined, "hyper"),
-        document.createTextNode(_("hyperedgeRoles")),
+        el("span", () => _("hyperedgeRoles")),
       );
       legend.append(meaning);
     }
     host.append(legend);
     if (preview.truncated)
-      host.append(el("p", _("relationPreviewTruncated"), "data-preview-note"));
+      host.append(
+        el("p", () => _("relationPreviewTruncated"), "data-preview-note"),
+      );
   }
   function renderDataTable() {
     const host = $("data-table"),
@@ -5133,7 +5395,9 @@ export function mountPlatform(
     }
     const dataInsightsRefresh = $("data-insights-refresh");
     if (dataInsightsRefresh) {
-      const label = _("refreshData");
+      const label = _(
+        dataInsightsRefresh.disabled ? "refreshingData" : "refreshData",
+      );
       $("data-insights-refresh-label").textContent = label;
       dataInsightsRefresh.title = label;
       dataInsightsRefresh.setAttribute("aria-label", label);
@@ -5256,8 +5520,7 @@ export function mountPlatform(
   function schedulePromptPreview() {
     clearTimeout(promptRefreshTimer);
     promptRefreshTimer = setTimeout(
-      () =>
-        refreshPromptPreview().catch((error) => dataNote(error.message, true)),
+      () => refreshPromptPreview().catch((error) => dataNote(error, true)),
       150,
     );
   }
@@ -5318,7 +5581,7 @@ export function mountPlatform(
       renderVariableRolePreview();
     } catch (error) {
       selectionSavedVersion = version;
-      dataNote(error?.message || error, true);
+      dataNote(error, true);
     } finally {
       selectionSaveInFlight = false;
       if (selectionSavedVersion < selectionSaveVersion) {
@@ -5652,9 +5915,9 @@ export function mountPlatform(
     const definitions =
       plotMode === "heatmap"
         ? [
-            ["row", "ROW"],
-            ["column", "COL"],
-            ["color", "MAP"],
+            ["row", _("channelRow")],
+            ["column", _("channelColumn")],
+            ["color", _("channelMap")],
             ["z", "Z"],
           ]
         : plotMode === "distribution"
@@ -5665,8 +5928,8 @@ export function mountPlatform(
           : [
               ["x", "X"],
               ["y", "Y"],
-              ["hue", "HUE"],
-              ["size", "SIZE"],
+              ["hue", _("channelHue")],
+              ["size", _("channelSize")],
             ];
     const fields = document.querySelector(".plot-fields"),
       slots = [...document.querySelectorAll(".plot-slot")];
@@ -5780,24 +6043,19 @@ export function mountPlatform(
     loadActivePlotPreview();
     dataNote(_("plotAdjusted"));
   }
-  function loadActivePlotPreview() {
+  async function loadActivePlotPreview(preserveHeatmap = false) {
+    const request = ++plotRequest;
+    plotFailure = null;
     renderPlotModeSurface();
-    if (plotMode === "table" || plotMode === "structure") return;
-    if (plotMode === "heatmap")
-      loadHeatmapPreview().catch((error) => {
-        heatmapPreview = null;
-        renderHeatmap(error?.message || error);
-      });
-    else if (plotMode === "distribution")
-      loadDistributionPreview().catch((error) => {
-        plotPreview = null;
-        renderDistribution(error?.message || error);
-      });
-    else
-      loadPlotPreview().catch((error) => {
-        plotPreview = null;
-        renderScatter(error?.message || error);
-      });
+    try {
+      if (plotMode === "heatmap") await loadHeatmapPreview(preserveHeatmap);
+      else if (plotMode === "distribution") await loadDistributionPreview();
+      else if (plotMode === "scatter") await loadPlotPreview();
+    } catch (error) {
+      if (request !== plotRequest) return;
+      plotFailure = error;
+      renderActivePlot();
+    }
   }
   function renderPlotModeSurface() {
     const dataTable = plotMode === "table" || plotMode === "structure";
@@ -5813,9 +6071,12 @@ export function mountPlatform(
   function renderActivePlot() {
     renderPlotModeSurface();
     if (plotMode === "table" || plotMode === "structure") return;
-    if (plotMode === "heatmap") renderHeatmap();
-    else if (plotMode === "distribution") renderDistribution();
-    else renderScatter();
+    const error = plotFailure
+      ? localizedError(plotFailure, getUiLanguage())
+      : "";
+    if (plotMode === "heatmap") renderHeatmap(error);
+    else if (plotMode === "distribution") renderDistribution(error);
+    else renderScatter(error);
   }
   function renderPlotModeLanguage() {
     if (
@@ -5835,9 +6096,10 @@ export function mountPlatform(
     for (const option of select.options)
       option.textContent = _(labels[option.value]);
     select.value = plotMode;
+    $("scatter").setAttribute("aria-label", _(labels[plotMode]));
     select.setAttribute("aria-label", _("relationshipPreviewMode"));
     $("distribution-bin-label").textContent = _("distributionBins");
-    renderPlotModeSurface();
+    $("relationship-preview-title").textContent = _("dataInsightsTitle");
   }
   function svgNode(tag, attributes = {}) {
     const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
@@ -6389,9 +6651,7 @@ export function mountPlatform(
       slider.oninput = () => {
         heatmapZIndex = Number(slider.value);
         output.textContent = "…";
-        loadHeatmapPreview(true).catch((error) =>
-          renderHeatmap(error?.message || error),
-        );
+        loadActivePlotPreview(true);
       };
       host.replaceChildren(label, slider, output);
       host.dataset.signature = signature;
@@ -6592,7 +6852,7 @@ export function mountPlatform(
     renderPlotSlots();
     renderDataPreviewGroupPicker();
     loadDataPreviewGroup(selectedDataPreviewGroup).catch((error) =>
-      dataNote(error?.message || error, true),
+      dataNote(error, true),
     );
     requestAnimationFrame(loadActivePlotPreview);
     schedulePromptPreview();
@@ -6614,8 +6874,9 @@ export function mountPlatform(
       if (evaluatorDirty) await saveEvaluatorConfiguration();
       const target = targetVariable(),
         features = selectedFeatures();
-      if (!useCommittedContext) throw Error(_("contextDataRequired"));
-      if (!userPrompt.trim()) throw Error(_("inputRequired"));
+      if (!useCommittedContext)
+        throw localizedUiError(() => _("contextDataRequired"));
+      if (!userPrompt.trim()) throw localizedUiError(() => _("inputRequired"));
       const payload = {
         problem_description: researchProblemDescription(),
         user_prompt: userPrompt,
@@ -6686,14 +6947,21 @@ export function mountPlatform(
       topToggle = el("button", "⌄", "reasoning-toggle reasoning-toggle-top"),
       bottomToggle = el(
         "button",
-        _("collapse") + " ↑",
+        () => _("collapse") + " ↑",
         "reasoning-toggle reasoning-toggle-bottom",
       );
     if (agentOutput) renderAgentOutput(content, value);
+    else if (typeof value === "function") setLocalizedText(content, value);
     else content.textContent = pretty(value);
     for (const toggle of [topToggle, bottomToggle]) {
       toggle.type = "button";
-      toggle.title = _(toggle === topToggle ? "expand" : "collapse");
+      bindLanguage(toggle, () => {
+        toggle.title = _(
+          toggle === topToggle && !block.classList.contains("expanded")
+            ? "expand"
+            : "collapse",
+        );
+      });
       toggle.hidden = true;
       toggle.setAttribute("aria-expanded", "false");
       toggle.onclick = () => {
@@ -6730,7 +6998,8 @@ export function mountPlatform(
     }
     if (Array.isArray(value)) {
       const list = el("div", undefined, "param-list");
-      if (!value.length) list.append(el("span", _("emptyList"), "param-null"));
+      if (!value.length)
+        list.append(el("span", () => _("emptyList"), "param-null"));
       for (const entry of value) {
         if (entry && typeof entry === "object")
           list.append(parameterValue(entry));
@@ -6747,7 +7016,7 @@ export function mountPlatform(
         object.append(row);
       }
       if (!Object.keys(value).length)
-        object.append(el("span", _("emptyObject"), "param-null"));
+        object.append(el("span", () => _("emptyObject"), "param-null"));
       node.append(object);
       return node;
     }
@@ -6778,7 +7047,7 @@ export function mountPlatform(
         expanded = el("div", undefined, "param-expanded"),
         bottomToggle = el(
           "button",
-          _("collapse") + " ↑",
+          () => _("collapse") + " ↑",
           "reasoning-toggle reasoning-toggle-bottom",
         );
       const setExpanded = (expandedState) => {
@@ -6795,9 +7064,15 @@ export function mountPlatform(
         toggle.onclick = () =>
           setExpanded(!block.classList.contains("expanded"));
       }
-      topToggle.title = _("expand");
+      bindLanguage(topToggle, () => {
+        topToggle.title = _(
+          block.classList.contains("expanded") ? "collapse" : "expand",
+        );
+      });
       topToggle.setAttribute("aria-expanded", "false");
-      bottomToggle.title = _("collapse");
+      bindLanguage(bottomToggle, () => {
+        bottomToggle.title = _("collapse");
+      });
       bottomToggle.hidden = true;
       block.append(preview, topToggle, expanded, bottomToggle);
       if (row.isConnected) {
@@ -6806,12 +7081,12 @@ export function mountPlatform(
       }
     });
   }
-  function toolParameters(params, schema, collapseLong = false) {
+  function toolParameters(toolName, params, schema, collapseLong = false) {
     const entries =
       params && typeof params === "object" && !Array.isArray(params)
         ? Object.entries(params)
         : [["value", params]];
-    if (!entries.length) return el("div", _("noParameters"), "no-params");
+    if (!entries.length) return el("div", () => _("noParameters"), "no-params");
     const normalized =
       schema?.function?.parameters || schema?.parameters || schema || {};
     const list = el("div", undefined, "tool-params"),
@@ -6827,9 +7102,20 @@ export function mountPlatform(
       );
       if (description) {
         row.classList.add("has-description");
-        label.dataset.description = description;
         label.tabIndex = 0;
-        label.setAttribute("aria-label", `${name}：${description}`);
+        bindLanguage(label, () => {
+          const text = capabilityParameterDescription(
+            toolName,
+            name,
+            description,
+            getUiLanguage(),
+          );
+          label.dataset.description = text;
+          label.setAttribute(
+            "aria-label",
+            name + (currentLocale === "en" ? ": " : "：") + text,
+          );
+        });
       }
       if (required.has(name)) label.append(el("span", "*", "param-required"));
       const valueNode = parameterValue(value);
@@ -6849,15 +7135,21 @@ export function mountPlatform(
       const name = call.name || call.function?.name || "unknown_tool",
         schema = schemas?.[name];
       summary.append(
-        describe(el("span", name, "tool-name"), schema?.description),
+        describe(
+          el("span", name, "tool-name"),
+          schema?.description || schema?.function?.description,
+        ),
       );
       body.append(
-        el("div", _("callParameters"), "tool-caption"),
-        toolParameters(parseToolParams(call), schema),
+        el("div", () => _("callParameters"), "tool-caption"),
+        toolParameters(name, parseToolParams(call), schema),
       );
       const raw = call.raw ?? call.raw_str ?? call,
         rawBlock = el("details", undefined, "raw-json");
-      rawBlock.append(el("summary", _("rawJson")), el("pre", pretty(raw)));
+      rawBlock.append(
+        el("summary", () => _("rawJson")),
+        el("pre", pretty(raw)),
+      );
       body.append(rawBlock);
       item.append(summary, body);
       group.append(item);
@@ -6898,12 +7190,13 @@ export function mountPlatform(
     const stepMoney = usageTotal(step?.price),
       totalMoney = usageTotal(total?.price);
     if (!stepTokens && !totalTokens && !stepMoney && !totalMoney) return "";
-    return _("usageSummary", {
-      stepTokens: formatTokens(stepTokens),
-      stepMoney: formatMoney(stepMoney),
-      totalTokens: formatTokens(totalTokens),
-      totalMoney: formatMoney(totalMoney),
-    });
+    return () =>
+      _("usageSummary", {
+        stepTokens: formatTokens(stepTokens),
+        stepMoney: formatMoney(stepMoney),
+        totalTokens: formatTokens(totalTokens),
+        totalMoney: formatMoney(totalMoney),
+      });
   }
   function cumulativeUsage(payload) {
     const supplied = payload.cumulative_usage,
@@ -6954,7 +7247,9 @@ export function mountPlatform(
     const link = el("span", text, "meta-coord context-link");
     link.tabIndex = 0;
     link.setAttribute("role", "button");
-    link.title = _("contextLinkTitle");
+    bindLanguage(link, () => {
+      link.title = _("contextLinkTitle");
+    });
     const open = () => showContextAt(coord, nodeId, runId);
     link.onclick = open;
     link.onkeydown = (event) => {
@@ -6971,12 +7266,14 @@ export function mountPlatform(
   function dataContextLink(turn) {
     const link = el(
       "span",
-      _("dataAgentTurn", { count: turn }),
+      () => _("dataAgentTurn", { count: turn }),
       "meta-coord context-link",
     );
     link.tabIndex = 0;
     link.setAttribute("role", "button");
-    link.title = _("contextLinkTitle");
+    bindLanguage(link, () => {
+      link.title = _("contextLinkTitle");
+    });
     const open = () => showDataContextAt(turn);
     link.onclick = open;
     link.onkeydown = (event) => {
@@ -7009,13 +7306,19 @@ export function mountPlatform(
       meta = el("div", undefined, "meta"),
       time = el(
         "span",
-        new Date(Number(e.timestamp) * 1000).toLocaleTimeString(currentLocale),
+        () =>
+          new Date(Number(e.timestamp) * 1000).toLocaleTimeString(
+            currentLocale,
+          ),
         "meta-time",
       );
     card.dataset.started = e.timestamp;
-    meta.append(eventBadge("context", _("eventContext")));
+    meta.append(eventBadge("context", () => _("eventContext")));
     if (p.turn) meta.append(dataContextLink(p.turn));
-    meta.append(el("span", contextPayloadStats(p), "context-size"), time);
+    meta.append(
+      el("span", () => contextPayloadStats(p), "context-size"),
+      time,
+    );
     card.append(meta);
     feed.append(card);
     feed.hidden = false;
@@ -7026,12 +7329,14 @@ export function mountPlatform(
   function evaluatorContextLink(turn) {
     const link = el(
       "span",
-      _("dataAgentTurn", { count: turn }),
+      () => _("dataAgentTurn", { count: turn }),
       "meta-coord context-link",
     );
     link.tabIndex = 0;
     link.setAttribute("role", "button");
-    link.title = _("contextLinkTitle");
+    bindLanguage(link, () => {
+      link.title = _("contextLinkTitle");
+    });
     const open = () => showEvaluatorContextAt(turn);
     link.onclick = open;
     link.onkeydown = (event) => {
@@ -7062,11 +7367,11 @@ export function mountPlatform(
           contextHistory.set(key, payload);
         }
       } catch (error) {
-        notice(_("contextLoadFailed", { message: error.message }));
+        notice(() => _("contextLoadFailed", { message: error.message }));
       }
     }
     if (payload) renderContext(payload);
-    else notice(_("contextNotFound", normalized));
+    else notice(() => _("contextNotFound", normalized));
   }
   function showDataContextAt(turn) {
     const key = dataContextKey(turn),
@@ -7074,7 +7379,7 @@ export function mountPlatform(
     selectedContextKey = key;
     selectCenterTab("context");
     if (payload) renderContext(payload);
-    else notice(_("dataContextNotFound", { count: turn }));
+    else notice(() => _("dataContextNotFound", { count: turn }));
   }
   function showEvaluatorContextAt(turn) {
     const key = evaluatorContextKey(turn),
@@ -7082,7 +7387,7 @@ export function mountPlatform(
     selectedContextKey = key;
     selectCenterTab("context");
     if (payload) renderContext(payload);
-    else notice(_("evaluatorContextNotFound", { count: turn }));
+    else notice(() => _("evaluatorContextNotFound", { count: turn }));
   }
   function updateStreamProgress(node) {
     const now = performance.now() / 1000,
@@ -7121,9 +7426,10 @@ export function mountPlatform(
     card.append(
       el(
         "div",
-        currentLocale.startsWith("zh")
-          ? "本轮输出达到上限，已保留已有内容。可发送“继续”，或在设置中调整输出上限后继续。"
-          : "Output limit reached. Partial output is preserved. Send “continue”, or adjust the output limit in settings before continuing.",
+        () =>
+          currentLocale.startsWith("zh")
+            ? "本轮输出达到上限，已保留已有内容。可发送“继续”，或在设置中调整输出上限后继续。"
+            : "Output limit reached. Partial output is preserved. Send “continue”, or adjust the output limit in settings before continuing.",
         "truncation-notice",
       ),
     );
@@ -7198,12 +7504,13 @@ export function mountPlatform(
       const meta = el("div", undefined, "meta"),
         metaTime = el(
           "span",
-          new Date(Number(state.started) * 1000).toLocaleTimeString(
-            currentLocale,
-          ),
+          () =>
+            new Date(Number(state.started) * 1000).toLocaleTimeString(
+              currentLocale,
+            ),
           "meta-time",
         );
-      meta.append(eventBadge("agent", _("eventAgent")));
+      meta.append(eventBadge("agent", () => _("eventAgent")));
       if (dataMode && state.turn)
         meta.append(
           contextScope === "evaluator"
@@ -7255,7 +7562,7 @@ export function mountPlatform(
       if (failed) {
         card.classList.add("tool_error");
         if (!card.querySelector(".stream-error"))
-          card.append(el("pre", p.error || _("failed"), "stream-error"));
+          card.append(el("pre", () => p.error || _("failed"), "stream-error"));
       }
       appendTruncationNotice(card, p);
       if (terminal) {
@@ -7304,16 +7611,17 @@ export function mountPlatform(
       meta = el("div", undefined, "meta"),
       link = el(
         "a",
-        currentLocale === "en" ? "Download full event" : "下载完整事件",
+        () => (currentLocale === "en" ? "Download full event" : "下载完整事件"),
         "context-link",
       );
     card.dataset.previewSequence = String(event.seq);
     meta.append(
       el(
         "span",
-        currentLocale === "en"
-          ? "Large event: showing a limited preview."
-          : "该事件较大，当前显示受限预览。",
+        () =>
+          currentLocale === "en"
+            ? "Large event: showing a limited preview."
+            : "该事件较大，当前显示受限预览。",
         "small muted",
       ),
     );
@@ -7347,7 +7655,7 @@ export function mountPlatform(
       settleAssistantCards(
         assistantCards,
         e.kind === "execution_failed"
-          ? e.payload?.error || e.payload?.result?.error || _("failed")
+          ? e.payload?.error || e.payload?.result?.error || (() => _("failed"))
           : null,
       );
     if (e.kind === "prompt_added") {
@@ -7399,9 +7707,10 @@ export function mountPlatform(
     const meta = el("div", undefined, "meta"),
       metaTime = el(
         "span",
-        new Date(Number(card.dataset.started) * 1000).toLocaleTimeString(
-          currentLocale,
-        ),
+        () =>
+          new Date(Number(card.dataset.started) * 1000).toLocaleTimeString(
+            currentLocale,
+          ),
         "meta-time",
       );
     meta.append(eventKind(e.kind, p.result?.ok === false), metaTime);
@@ -7478,13 +7787,14 @@ export function mountPlatform(
         Math.max(0, e.timestamp - Number(card.dataset.started));
       metaTime.before(
         describe(
-          el("span", p.call?.name || "Tool", "tool-event-name"),
-          p.tool_schema?.description,
+          el("span", p.call?.name || (() => _("eventTool")), "tool-event-name"),
+          p.tool_schema?.description || p.tool_schema?.function?.description,
         ),
         timelineToolState(pending, failed, duration),
       );
-      card.append(el("div", _("callParameters"), "tool-caption"));
+      card.append(el("div", () => _("callParameters"), "tool-caption"));
       const parameters = toolParameters(
+        p.call?.name || p.call?.function?.name || "",
         parseToolParams(p.call || {}),
         p.tool_schema,
         true,
@@ -7492,15 +7802,16 @@ export function mountPlatform(
       parameters.classList.add("tool-event-params");
       card.append(parameters);
       if (!pending) {
-        const resultText = p.result?.result_str || p.error || _("toolNoText");
+        const resultText =
+          p.result?.result_str || p.error || (() => _("toolNoText"));
         card.append(
-          el("div", _(failed ? "errorInfo" : "result"), "tool-caption"),
+          el("div", () => _(failed ? "errorInfo" : "result"), "tool-caption"),
         );
         previewBlock(card, resultText, "tool-result-block");
         if (p.result?.result !== undefined) {
           const raw = el("details", undefined, "raw-json tool-result-raw");
           raw.append(
-            el("summary", _("rawJson")),
+            el("summary", () => _("rawJson")),
             el("pre", pretty(p.result.result)),
           );
           card.append(raw);
@@ -7509,7 +7820,7 @@ export function mountPlatform(
       if (pending) toolCards.set(key, card);
       else toolCards.delete(key);
     } else if (e.kind === "lifecycle") {
-      metaTime.before(el("span", _(p.state), "meta-coord"));
+      metaTime.before(el("span", () => _(p.state), "meta-coord"));
       const bestIndex = p.result?.best_candidate,
         bestCandidate = Number.isInteger(bestIndex)
           ? p.result?.candidates?.[bestIndex]
@@ -7517,22 +7828,22 @@ export function mountPlatform(
       if (bestCandidate?.formula)
         card.append(el("div", bestCandidate.formula, "formula"));
       if (p.result?.error) card.append(el("pre", p.result.error));
-      disclosure(card, _("fullRunResult"), p.result);
+      disclosure(card, () => _("fullRunResult"), p.result);
     } else if (e.kind === "control") {
-      const actionLabel =
-        {
+      const actionLabel = () =>
+        ({
           pause: _("safeStopNotice"),
           force_pause: _("forceStopNotice"),
           next_c: _("controlNextC"),
           next_r: _("controlNextR"),
-        }[p.action] ||
+        })[p.action] ||
         p.action ||
         _("controlAction");
       metaTime.before(el("span", actionLabel, "meta-coord"));
       if (p.message || p.error)
         previewBlock(card, p.message || p.error, "control-message");
     } else {
-      eventContent(card, meta, metaTime, compactEventContent(e));
+      eventContent(card, meta, metaTime, e);
     }
     if (!updating) feed.append(card);
     while (feed.children.length > 1000) feed.firstChild.remove();
@@ -7572,11 +7883,11 @@ export function mountPlatform(
       return;
     }
     if (e.kind === "data_error")
-      settleAssistantCards(dataAssistantCards, p.error || _("failed"));
+      settleAssistantCards(dataAssistantCards, p.error || (() => _("failed")));
     if (e.kind === "data_complete") {
       if (p.status === "stopped")
         for (const card of dataAssistantCards.values())
-          card.append(el("div", _("dataAgentStopped"), "small muted"));
+          card.append(el("div", () => _("dataAgentStopped"), "small muted"));
       settleAssistantCards(dataAssistantCards);
       return;
     }
@@ -7632,15 +7943,19 @@ export function mountPlatform(
     const meta = el("div", undefined, "meta"),
       metaTime = el(
         "span",
-        new Date(Number(card.dataset.started) * 1000).toLocaleTimeString(
-          currentLocale,
-        ),
+        () =>
+          new Date(Number(card.dataset.started) * 1000).toLocaleTimeString(
+            currentLocale,
+          ),
         "meta-time",
       );
     if (e.kind === "data_user")
-      meta.append(eventBadge("user", _("eventUser")), metaTime);
+      meta.append(
+        eventBadge("user", () => _("eventUser")),
+        metaTime,
+      );
     else if (e.kind === "data_assistant") {
-      meta.append(eventBadge("agent", _("eventAgent")));
+      meta.append(eventBadge("agent", () => _("eventAgent")));
       if (p.turn) meta.append(dataContextLink(p.turn));
       const badge = modelBadge(p.provider, p.model);
       if (badge) meta.append(badge);
@@ -7649,7 +7964,7 @@ export function mountPlatform(
       meta.append(
         eventBadge(
           "tool",
-          _(failed ? "eventToolError" : "eventTool"),
+          () => _(failed ? "eventToolError" : "eventTool"),
           failed || resultFailed,
         ),
       );
@@ -7657,8 +7972,8 @@ export function mountPlatform(
         pending = e.kind === "data_tool_start";
       meta.append(
         describe(
-          el("span", p.call?.name || "Tool", "tool-event-name"),
-          p.tool_schema?.description,
+          el("span", p.call?.name || (() => _("eventTool")), "tool-event-name"),
+          p.tool_schema?.description || p.tool_schema?.function?.description,
         ),
         timelineToolState(pending, failed, duration),
         metaTime,
@@ -7688,8 +8003,9 @@ export function mountPlatform(
         assistantStreamStates.delete(p.response_id);
       }
     } else if (isTool) {
-      card.append(el("div", _("callParameters"), "tool-caption"));
+      card.append(el("div", () => _("callParameters"), "tool-caption"));
       const parameters = toolParameters(
+        p.call?.name || p.call?.function?.name || "",
         parseToolParams(p.call || {}),
         p.tool_schema,
         true,
@@ -7698,17 +8014,17 @@ export function mountPlatform(
       card.append(parameters);
       if (e.kind === "data_tool_result" || e.kind === "data_tool_error") {
         card.append(
-          el("div", _(failed ? "errorInfo" : "result"), "tool-caption"),
+          el("div", () => _(failed ? "errorInfo" : "result"), "tool-caption"),
         );
         previewBlock(
           card,
-          p.result?.result_str || _("toolNoText"),
+          () => p.result?.result_str || _("toolNoText"),
           "tool-result-block",
         );
         if (p.result?.result !== undefined) {
           const raw = el("details", undefined, "raw-json tool-result-raw");
           raw.append(
-            el("summary", _("rawJson")),
+            el("summary", () => _("rawJson")),
             el("pre", pretty(p.result.result)),
           );
           card.append(raw);
@@ -7757,7 +8073,10 @@ export function mountPlatform(
       return;
     }
     if (e.kind === "evaluator_error") {
-      settleAssistantCards(evaluatorAssistantCards, p.error || _("failed"));
+      settleAssistantCards(
+        evaluatorAssistantCards,
+        p.error || (() => _("failed")),
+      );
       renderGenericEventCard(e, feed);
       return;
     }
@@ -7937,14 +8256,29 @@ export function mountPlatform(
         });
   }
   function renderActivity() {
-    if (!session) return;
+    if (connectionFailure) {
+      $("connection").textContent = _("connectionError");
+      $("connection").title = localizedError(
+        connectionFailure,
+        getUiLanguage(),
+      );
+      return;
+    }
+    if (!session) {
+      $("connection").textContent = _("connection");
+      return;
+    }
     const stale = Date.now() - lastStatusAt > 12000;
     $("connection").textContent = _(stale ? "connectionLost" : "connected");
-    $("connection").title = _("lastSync", {
-      time: lastStatusAt
-        ? new Date(lastStatusAt).toLocaleTimeString(currentLocale)
-        : _("neverConnected"),
-    });
+    $("connection").title = eventSyncFailure
+      ? _("eventSync", {
+          message: localizedError(eventSyncFailure, getUiLanguage()),
+        })
+      : _("lastSync", {
+          time: lastStatusAt
+            ? new Date(lastStatusAt).toLocaleTimeString(currentLocale)
+            : _("neverConnected"),
+        });
     if (
       lastEventsAt &&
       Date.now() - lastEventsAt > 15000 &&
@@ -8437,8 +8771,14 @@ export function mountPlatform(
     digits.min = "0";
     digits.max = "12";
     digits.step = "1";
-    modeLabel.append(el("span", _("numberFormat")), mode);
-    digitsLabel.append(el("span", _("candidateNumberDigits")), digits);
+    modeLabel.append(
+      el("span", () => _("numberFormat")),
+      mode,
+    );
+    digitsLabel.append(
+      el("span", () => _("candidateNumberDigits")),
+      digits,
+    );
     panel.append(modeLabel, digitsLabel);
     details.append(summary, panel);
     mode.onchange = () => {
@@ -8482,7 +8822,6 @@ export function mountPlatform(
       candidateFormulaMode,
       candidateFormulaNumberMode,
       candidateFormulaDigits,
-      currentLocale,
       records,
     ]);
     if ($("topk").dataset.sig === sig) return;
@@ -8492,9 +8831,10 @@ export function mountPlatform(
       $("topk").append(
         el(
           "p",
-          candidateMode === "pareto" && records.length
-            ? _("paretoEmpty")
-            : _("emptyCandidates"),
+          () =>
+            candidateMode === "pareto" && records.length
+              ? _("paretoEmpty")
+              : _("emptyCandidates"),
           "muted small",
         ),
       );
@@ -8527,7 +8867,7 @@ export function mountPlatform(
         metrics.append(item);
       }
       card.append(metrics);
-      disclosure(card, _("allMetrics"), record);
+      disclosure(card, () => _("allMetrics"), record);
       $("topk").append(card);
     });
   }
@@ -8608,12 +8948,11 @@ export function mountPlatform(
         "workspace-readonly " +
           (mounted ? "workspace-mounted" : "workspace-locked"),
       ),
-      label = _(mounted ? "readOnlyItem" : "lockedItem");
+      label = () => _(mounted ? "readOnlyItem" : "lockedItem");
     badge.innerHTML = mounted
       ? '<svg viewBox="0 0 14 14" aria-hidden="true"><path d="m5.25 8.75-1.1 1.1a2.15 2.15 0 0 1-3.05-3.04l1.55-1.55a2.15 2.15 0 0 1 3.04 0"/><path d="m8.75 5.25 1.1-1.1a2.15 2.15 0 0 1 3.05 3.04l-1.55 1.55a2.15 2.15 0 0 1-3.04 0"/><path d="m4.75 7 4.5 0"/></svg>'
       : '<svg viewBox="0 0 14 14" aria-hidden="true"><rect x="2.5" y="6" width="9" height="6.5" rx="1.5"/><path d="M4.5 6V4.5a2.5 2.5 0 0 1 5 0V6"/></svg>';
-    badge.title = label;
-    badge.setAttribute("aria-label", label);
+    setLocalizedLabel(badge, label);
     return badge;
   }
   function updateWorkspaceEditorIcon() {
@@ -8659,12 +8998,28 @@ export function mountPlatform(
     const precision = index === 0 ? 0 : size < 10 ? 2 : size < 100 ? 1 : 0;
     return size.toFixed(precision) + units[index];
   }
+  function confirmWorkspaceDelete(name) {
+    const dialog = $("delete-file-dialog");
+    setLocalizedText($("delete-file-message"), () =>
+      _("deleteConfirm", { name }),
+    );
+    dialog.returnValue = "";
+    const confirmation = new Promise((resolve) => {
+      dialog.addEventListener(
+        "close",
+        () => resolve(dialog.returnValue === "delete"),
+        { once: true },
+      );
+    });
+    dialog.showModal();
+    $("cancel-delete-file").focus();
+    return confirmation;
+  }
   function workspaceItemMenu(item) {
     const actions = el("details", undefined, "file-actions"),
       summary = el("summary", "⋯"),
       menu = el("div", undefined, "file-action-menu");
-    summary.title = _("fileActions");
-    summary.setAttribute("aria-label", _("fileActions"));
+    setLocalizedLabel(summary, () => _("fileActions"));
     const download = el("a");
     download.href =
       "/api/workspace/download?path=" + encodeURIComponent(item.path);
@@ -8675,10 +9030,9 @@ export function mountPlatform(
     };
     if (item.directory) {
       const loading = el("span", undefined, "download-size-loading");
-      loading.title = _("calculatingSize");
-      loading.setAttribute("aria-label", _("calculatingSize"));
+      setLocalizedLabel(loading, () => _("calculatingSize"));
       download.append(
-        document.createTextNode(_("downloadZip") + " ("),
+        el("span", () => _("downloadZip") + " ("),
         loading,
         document.createTextNode(")"),
       );
@@ -8693,23 +9047,33 @@ export function mountPlatform(
         )
           .then((result) => {
             item.size = result.size;
-            download.textContent = _("downloadZipSize", {
-              size: formatFileSize(result.size),
-            });
+            setLocalizedText(download, () =>
+              _("downloadZipSize", {
+                size: formatFileSize(result.size),
+              }),
+            );
           })
           .catch((error) => {
-            download.textContent =
-              _("downloadZip") + " (" + _("sizeUnavailable") + ")";
-            download.title = error.message;
+            setLocalizedText(
+              download,
+              () => _("downloadZip") + " (" + _("sizeUnavailable") + ")",
+            );
+            bindLanguage(download, () => {
+              download.title = localizedError(error, getUiLanguage());
+            });
           });
       };
     } else
-      download.textContent = _("downloadSize", {
-        size: formatFileSize(item.size),
-      });
+      setLocalizedText(download, () =>
+        _("downloadSize", {
+          size: formatFileSize(item.size),
+        }),
+      );
     menu.append(download);
     if (!item.mounted) {
-      const lock = el("button", _(item.locked ? "unlockItem" : "lockItem"));
+      const lock = el("button", () =>
+        _(item.locked ? "unlockItem" : "lockItem"),
+      );
       lock.type = "button";
       lock.onclick = guard(async (event) => {
         event.stopPropagation();
@@ -8719,8 +9083,8 @@ export function mountPlatform(
       menu.append(lock);
     }
     if (!item.read_only) {
-      const rename = el("button", _("rename")),
-        remove = el("button", _("deleteItem"), "delete-action");
+      const rename = el("button", () => _("rename")),
+        remove = el("button", () => _("deleteItem"), "delete-action");
       rename.type = remove.type = "button";
       rename.onclick = (event) => {
         event.stopPropagation();
@@ -8730,7 +9094,7 @@ export function mountPlatform(
       remove.onclick = guard(async (event) => {
         event.stopPropagation();
         actions.open = false;
-        if (!confirm(_("deleteConfirm", { name: item.name }))) return;
+        if (!(await confirmWorkspaceDelete(item.name))) return;
         await deleteWorkspaceItem(item.path);
       });
       menu.append(rename, remove);
@@ -8744,18 +9108,13 @@ export function mountPlatform(
     else expandedDirectories.delete(item.path);
     node.setAttribute("aria-expanded", String(expanded));
     children.hidden = !expanded;
-    const toggle = node.querySelector(".tree-toggle"),
-      label =
-        (currentLocale === "en"
-          ? expanded
-            ? "Collapse "
-            : "Expand "
-          : expanded
-            ? "折叠"
-            : "展开") + item.name;
+    const toggle = node.querySelector(".tree-toggle");
     toggle.classList.toggle("expanded", expanded);
-    toggle.title = label;
-    toggle.setAttribute("aria-label", label);
+    setLocalizedLabel(toggle, () =>
+      _(expanded ? "collapseDirectory" : "expandDirectory", {
+        name: item.name,
+      }),
+    );
   }
   async function loadWorkspaceChildren(item, node, children) {
     if (
@@ -8807,13 +9166,17 @@ export function mountPlatform(
               ")"
             : "()";
           meta.append(
-            el("span", _("previewShape", { value: shape })),
-            el("span", _("previewDtype", { value: value.dtype })),
-            el("span", _("previewElements", { value: value.size })),
+            el("span", () => _("previewShape", { value: shape })),
+            el("span", () => _("previewDtype", { value: value.dtype })),
+            el("span", () => _("previewElements", { value: value.size })),
           );
         }
-        $("preview-text").textContent =
-          value.text + (value.truncated ? "\n… " + _("previewTruncated") : "");
+        setLocalizedText(
+          $("preview-text"),
+          () =>
+            value.text +
+            (value.truncated ? "\n… " + _("previewTruncated") : ""),
+        );
         $("preview").showModal();
       });
       row.ondragstart = (event) => {
@@ -8904,20 +9267,27 @@ export function mountPlatform(
     $("files").replaceChildren();
     renderWorkspaceEntries(data.entries, $("files"));
     if (!data.entries.length)
-      $("files").append(el("p", _("workspaceEmpty"), "muted small"));
+      $("files").append(el("p", () => _("workspaceEmpty"), "muted small"));
   }
   async function uploadFiles(files) {
     for (const file of files) {
-      notice(_("uploading", { name: file.name }));
+      notice(() => _("uploading", { name: file.name }));
       const path = file.webkitRelativePath || file.name;
       const response = await transport.fetchFile(
         "/api/workspace/upload?path=" + encodeURIComponent(path),
         { method: "PUT", headers: conversationHeaders(), body: file },
       );
-      if (!response.ok)
-        throw Error(
-          file.name + ": " + (await responseError(response, _("uploadFailed"))),
+      if (!response.ok) {
+        const detail = await responseError(response, "");
+        throw localizedUiError(
+          () =>
+            file.name +
+            ": " +
+            (detail
+              ? localizedError(detail, getUiLanguage())
+              : _("uploadFailed")),
         );
+      }
     }
     notice("");
     filesSignature = "";
@@ -9010,6 +9380,8 @@ export function mountPlatform(
     dataGroupPreviewToken += 1;
     plotPreview = null;
     plotPreviewToken += 1;
+    plotRequest += 1;
+    plotFailure = null;
     dataChannels = { x: "", y: "", hue: "", size: "" };
     distributionChannels = { x: "", y: "" };
     heatmapChannels = { row: [], column: [], color: "", z: "" };
@@ -9065,6 +9437,24 @@ export function mountPlatform(
     renderDataPreviewGroupPicker();
     $("target").value = "";
   }
+  function renderSessionMessages(s) {
+    $("data-agent-state").textContent = _(
+      s.data_state === "stopping"
+        ? "dataAgentStopping"
+        : s.data_state === "running"
+          ? "dataAgentRunning"
+          : s.data_state === "stopped"
+            ? "dataAgentStopped"
+            : "dataAgentReady",
+    );
+    $("pending").textContent = s.pending_transition
+      ? _(s.pending_transition === "next_r" ? "nextRQueued" : "nextCQueued")
+      : s.pending_settings
+        ? _("modelQueued")
+        : s.pending_messages
+          ? _("promptsQueued", { count: s.pending_messages })
+          : "";
+  }
   function syncSession(s) {
     const serverSessionChanged = Boolean(
       session?.run_id && s.run_id && session.run_id !== s.run_id,
@@ -9075,26 +9465,11 @@ export function mountPlatform(
     renderHeaderControls();
     renderTimelineWelcome();
     renderComposerControl();
-    $("data-agent-state").textContent = _(
-      s.data_state === "stopping"
-        ? "dataAgentStopping"
-        : s.data_state === "running"
-          ? "dataAgentRunning"
-          : s.data_state === "stopped"
-            ? "dataAgentStopped"
-            : "dataAgentReady",
-    );
+    renderSessionMessages(s);
     renderDataAgentControl();
     renderTimelineSurface();
     renderEvaluatorAvailability();
     applyEvaluatorAgentResult();
-    $("pending").textContent = s.pending_transition
-      ? _(s.pending_transition === "next_r" ? "nextRQueued" : "nextCQueued")
-      : s.pending_settings
-        ? _("modelQueued")
-        : s.pending_messages
-          ? _("promptsQueued", { count: s.pending_messages })
-          : "";
     for (const id of ["next-c", "next-r"]) {
       $(id).hidden = !running;
       $(id).disabled = !running;
@@ -9108,6 +9483,7 @@ export function mountPlatform(
       if (s.discovery_task?.prompts)
         applyDiscoveryPrompts(s.discovery_task.prompts);
       if (s.initial_prompt) {
+        usesDefaultProblem = false;
         $("problem-description").value = s.initial_prompt;
         promptDefaults.problem_description = s.initial_prompt;
         requestAnimationFrame(fitProblemDescription);
@@ -9120,7 +9496,7 @@ export function mountPlatform(
         .then(() => {
           if (s.state === "idle") return refreshPromptPreview();
         })
-        .catch((error) => dataNote(error.message, true));
+        .catch((error) => dataNote(error, true));
       if (s.state !== "idle") selectCenterTab("timeline");
     }
     if ((s.data_context?.revision || 0) > renderedDataRevision) {
@@ -9153,11 +9529,12 @@ export function mountPlatform(
       await conversationReady;
       const s = await api("/api/session");
       lastStatusAt = Date.now();
+      connectionFailure = null;
       syncSession(s);
       renderActivity();
     } catch (error) {
-      $("connection").textContent = _("connectionError");
-      $("connection").title = error.message;
+      connectionFailure = error;
+      renderActivity();
     } finally {
       setTimeout(pollStatus, 1500);
     }
@@ -9196,6 +9573,7 @@ export function mountPlatform(
         api("/api/evaluator/agent/events?after_seq=" + evaluatorSeq),
       ]);
       lastEventsAt = Date.now();
+      eventSyncFailure = null;
       if (
         [searchEvents, dataEvents, evaluatorEvents].some(
           (batch) => batch.has_more,
@@ -9207,7 +9585,7 @@ export function mountPlatform(
         (dataEvents.truncated && dataSeq) ||
         (evaluatorEvents.truncated && evaluatorSeq)
       )
-        notice(_("eventBufferGap"));
+        notice(() => _("eventBufferGap"));
       for (const [batch, render] of [
         [searchEvents, renderEvent],
         [dataEvents, renderDataEvent],
@@ -9217,7 +9595,7 @@ export function mountPlatform(
           try {
             render(e);
           } catch (error) {
-            notice(
+            notice(() =>
               _("eventRenderFailed", { seq: e.seq, message: error.message }),
             );
           }
@@ -9241,7 +9619,8 @@ export function mountPlatform(
       renderActivity();
     } catch (error) {
       pollDelay = 1500;
-      $("connection").title = _("eventSync", { message: error.message });
+      eventSyncFailure = error;
+      renderActivity();
     } finally {
       setTimeout(pollEvents, pollDelay);
     }
@@ -9251,7 +9630,9 @@ export function mountPlatform(
       await conversationReady;
       await refreshFiles();
     } catch (error) {
-      $("files").title = error.message;
+      bindLanguage($("files"), () => {
+        $("files").title = localizedError(error, getUiLanguage());
+      });
     } finally {
       setTimeout(pollFiles, 5000);
     }
@@ -9353,6 +9734,7 @@ export function mountPlatform(
         action = _(collapsed ? "expandPanel" : "collapsePanel", { name });
       resizer.setAttribute("aria-expanded", String(!collapsed));
       resizer.title = _("resizePanel");
+      resizer.setAttribute("aria-label", _("resizeNamedPanel", { name }));
       toggle.textContent =
         side === "left" ? (collapsed ? "›" : "‹") : collapsed ? "‹" : "›";
       toggle.setAttribute("aria-label", action);
@@ -9489,6 +9871,7 @@ export function mountPlatform(
   };
   bindEnterToSend($("prompt"), $("send"));
   $("problem-description").oninput = () => {
+    usesDefaultProblem = false;
     fitProblemDescription();
     syncResearchProblem($("problem-description").value);
   };
@@ -9535,7 +9918,7 @@ export function mountPlatform(
       await api("/api/data/agent/settings", dataAgentSettingsPayload(), "PUT"),
     );
     await setDataAgentSettingsOpen(false);
-    notice(
+    notice(() =>
       credential
         ? _("apiKeySaved", { env: credential.env_var })
         : _(queued ? "settingsQueued" : "dataSettingsSaved"),
@@ -9572,8 +9955,7 @@ export function mountPlatform(
   promptResizeHandle.tabIndex = 0;
   promptResizeHandle.setAttribute("role", "separator");
   promptResizeHandle.setAttribute("aria-orientation", "horizontal");
-  promptResizeHandle.setAttribute("aria-label", "调整用户提示词输入区域高度");
-  promptResizeHandle.title = "调整用户提示词输入区域高度";
+  setLocalizedLabel(promptResizeHandle, () => _("promptResize"));
   promptInput.after(promptResizeHandle);
   const positionPromptResizeHandle = () =>
       (promptResizeHandle.style.top = promptInput.offsetTop + 7 + "px"),
@@ -9630,7 +10012,7 @@ export function mountPlatform(
       credential = await saveProviderCredential();
     syncSession(await api("/api/session/settings", settingsPayload()));
     await setSettingsOpen(false);
-    notice(
+    notice(() =>
       credential
         ? _("apiKeySaved", { env: credential.env_var })
         : _(queued ? "settingsQueued" : "settingsSaved"),
@@ -9652,7 +10034,8 @@ export function mountPlatform(
   $("workspace-name-editor").onsubmit = guard(async (event) => {
     event.preventDefault();
     const name = $("workspace-name-input").value.trim();
-    if (!workspaceNameIsValid(name)) throw Error(_("invalidName"));
+    if (!workspaceNameIsValid(name))
+      throw localizedUiError(() => _("invalidName"));
     if (workspaceEditItem) {
       const parent = workspaceEditItem.path.split("/").slice(0, -1).join("/");
       await moveWorkspaceItem(
@@ -9718,12 +10101,10 @@ export function mountPlatform(
         100;
     if (tab === "prepare" || tab === "data") {
       if (!dataPreview)
-        hydrateCommittedContext().catch((error) =>
-          dataNote(error.message, true),
-        );
+        hydrateCommittedContext().catch((error) => dataNote(error, true));
       requestAnimationFrame(renderActivePlot);
     } else if (tab === "timeline" && session?.state === "idle" && !dataPreview)
-      hydrateCommittedContext().catch((error) => dataNote(error.message, true));
+      hydrateCommittedContext().catch((error) => dataNote(error, true));
   }
   let tabHintTimer;
   function showTabHint(message) {
@@ -9754,7 +10135,7 @@ export function mountPlatform(
     renderPlotModeLanguage();
     renderDataPreviewGroupPicker();
     loadDataPreviewGroup(selectedDataPreviewGroup).catch((error) =>
-      dataNote(error?.message || error, true),
+      dataNote(error, true),
     );
     loadActivePlotPreview();
   };
@@ -9784,14 +10165,17 @@ export function mountPlatform(
     uiTheme = uiTheme === "light" ? "dark" : "light";
     applyTheme();
   };
-  $("language-toggle").onclick = () => {
-    currentLocale =
-      SUPPORTED_LOCALES[
-        (SUPPORTED_LOCALES.indexOf(currentLocale) + 1) %
-          SUPPORTED_LOCALES.length
-      ];
-    applyLanguage();
+  $("language-toggle").onmousedown = (event) => {
+    // Keep an inline rename draft focused while changing languages.
+    if (
+      document.activeElement?.closest(
+        "#conversation-title-editor,.conversation-inline-editor",
+      )
+    )
+      event.preventDefault();
   };
+  $("language-toggle").onclick = () =>
+    setUiLanguage(currentLocale === "en" ? "zh" : "en");
   $("tree").addEventListener("load", applyTheme);
   $("data-refresh").onclick = dataGuard(refreshCommittedContext);
   for (const slot of document.querySelectorAll(".plot-slot")) {
@@ -9836,30 +10220,68 @@ export function mountPlatform(
   });
   let discoveryTasks = [],
     discoveryLoading = false;
+  // Older catalogs have only Chinese summaries for the bundled studies.
+  // Translate their original prose while retaining formulas and custom edits.
+  const discoverySummaryLines = new Map([
+    [
+      "基于双模 RR Lyrae 的周期与 SDSS 光谱金属丰度数据，得到金属丰度标定公式：",
+      "Periods of double-mode RR Lyrae stars and SDSS spectroscopic metallicities give the following metallicity calibration:",
+    ],
+    [
+      "基于恒星年龄、化学丰度与轨道参数目录，得到厚盘族群的窄年龄—金属丰度序列，可近似描述为：",
+      "Stellar ages, chemical abundances and orbital parameters reveal a narrow age–metallicity sequence for the thick disc, approximated by:",
+    ],
+    [
+      "基于恒星质量、金属丰度及动力学族群数据，得到初始质量函数的幂律描述，其斜率随丰度与时代变化：",
+      "Stellar masses, metallicities and kinematic populations indicate a power-law initial mass function whose slope varies with abundance and epoch:",
+    ],
+    [
+      "基于校准射电爆发的频率分辨偏振数据，得到退偏振关系，并约束磁离子环境的变化：",
+      "Frequency-resolved polarization of calibrated radio bursts gives the depolarization relation below and constrains variations in the magneto-ionic environment:",
+    ],
+    [
+      "基于 1652 次重复 FRB 的爆发表，得到由对数正态与广义柯西分量组合描述的能量分布：",
+      "The energies of 1,652 bursts from a repeating FRB are described by a combination of log-normal and generalized Cauchy components:",
+    ],
+    [
+      "基于宇宙谱线背景统计与气体转换模型，得到宇宙平均分子气体密度随红移演化的拟合：",
+      "Line-background statistics and gas conversion models give this fit to the redshift evolution of the cosmic mean molecular gas density:",
+    ],
+    [
+      "基于分子云消光图重建的体密度统计（本例提供论文观测表），得到密度分布及恒星形成阈值的约束：",
+      "Volume densities reconstructed from molecular-cloud extinction maps constrain the density distribution and star-formation threshold. This example provides the published observation table:",
+    ],
+  ]);
+  function discoverySummary(task) {
+    const source = task.summary_zh || task.relation_zh || "";
+    if (currentLocale !== "en") return source || task.summary_en || "";
+    return (
+      task.summary_en ||
+      source
+        .split("\n")
+        .map((line) => discoverySummaryLines.get(line) || line)
+        .join("\n")
+    );
+  }
   function renderDiscoveryTasks() {
     const options = document.querySelector("#demo-picker .demo-options");
     options.replaceChildren();
     for (const task of discoveryTasks) {
       const reference = {
           citation: task.citation || task.title,
-          summary:
-            (currentLocale === "en" ? task.summary_en : task.summary_zh) ||
-            task.summary_zh || task.relation_zh,
+          summary: discoverySummary(task),
         },
+        subject = currentLocale === "en" ? task.title : task.subject_zh,
         card = el("article", undefined, "demo-option"),
         enabled = task.available && !discoveryLoading;
       card.dataset.discoveryTask = task.name;
       card.tabIndex = enabled ? 0 : -1;
       card.setAttribute("aria-disabled", String(!enabled));
-      card.setAttribute(
-        "aria-label",
-        (currentLocale === "en" ? "Load study: " : "加载研究：") +
-          task.subject_zh,
-      );
+      card.setAttribute("aria-label", _("loadStudy", { name: subject }));
       const header = el("div", undefined, "discovery-card-header"),
         topic = el("span", task.topic, "discovery-topic"),
         citation = el("a", reference.citation, "discovery-citation"),
-        title = el("b", task.subject_zh);
+        title = el("b", subject);
       citation.href = task.publisher_url;
       citation.target = "_blank";
       citation.rel = "noopener noreferrer";
@@ -9867,7 +10289,9 @@ export function mountPlatform(
       header.append(topic, citation);
       const description = el(
           "p",
-          currentLocale === "en" ? task.description_en : task.description_zh,
+          currentLocale === "en"
+            ? task.description_en || task.description_zh
+            : task.description_zh || task.description_en,
           "discovery-description",
         ),
         summary = el("div", undefined, "discovery-summary markdown-rendered");
@@ -9888,31 +10312,28 @@ export function mountPlatform(
       card.append(header, title, description, summary);
       if (!task.available)
         card.append(
-          el(
-            "span",
-            currentLocale === "en" ? "Data unavailable" : "数据尚未就绪",
-            "discovery-unavailable",
-          ),
+          el("span", _("discoveryUnavailable"), "discovery-unavailable"),
         );
       options.append(card);
     }
   }
   async function openDiscoveryPicker() {
     $("demo-picker").showModal();
+    if (discoveryTasks.length) renderDiscoveryTasks();
     renderDemoPickerLanguage();
-    $("demo-picker-status").textContent =
-      currentLocale === "en" ? "Checking data…" : "正在检查任务数据…";
+    setLocalizedText($("demo-picker-status"), () => _("discoveryChecking"));
     try {
       const result = await api("/api/data/discovery-tasks");
       discoveryTasks = result.tasks;
       renderDiscoveryTasks();
-      $("demo-picker-status").textContent = discoveryTasks.length
-        ? ""
-        : currentLocale === "en"
-          ? "No sample tasks are enabled. Contact an administrator to configure them."
-          : "暂无启用的样例任务，请联系管理员配置。";
+      setLocalizedText(
+        $("demo-picker-status"),
+        discoveryTasks.length ? "" : () => _("discoveryEmpty"),
+      );
     } catch (error) {
-      $("demo-picker-status").textContent = error.message;
+      setLocalizedText($("demo-picker-status"), () =>
+        localizedError(error, getUiLanguage()),
+      );
     }
   }
   function applyDiscoveryPrompts(p) {
@@ -9926,6 +10347,7 @@ export function mountPlatform(
       user_prompt: p.user_prompt,
     };
     $("data-agent-input").value = p.data_agent;
+    usesDefaultProblem = false;
     $("problem-description").value = p.problem_description;
     $("evaluator-agent-input").value = p.evaluator_agent;
     $("system-prompt").value = p.system_prompt;
@@ -9947,10 +10369,7 @@ export function mountPlatform(
     if (discoveryLoading) return;
     discoveryLoading = true;
     renderDiscoveryTasks();
-    $("demo-picker-status").textContent =
-      currentLocale === "en"
-        ? "Mounting read-only inputs…"
-        : "正在只读加载数据…";
+    setLocalizedText($("demo-picker-status"), () => _("discoveryMounting"));
     try {
       const generation = serverSessionGeneration,
         available = await api("/api/session/capabilities", undefined, "GET");
@@ -10013,13 +10432,11 @@ export function mountPlatform(
       filesSignature = "";
       await refreshFiles();
       selectCenterTab("prepare");
-      notice(
-        currentLocale === "en"
-          ? "Read-only inputs and stage-specific prompts are ready. Prepare the data, then build and confirm the evaluator before searching."
-          : "已只读加载数据并填入各阶段提示词。请先整理数据，再构建并确认评测器。",
-      );
+      notice(() => _("discoveryReady"));
     } catch (error) {
-      $("demo-picker-status").textContent = error.message;
+      setLocalizedText($("demo-picker-status"), () =>
+        localizedError(error, getUiLanguage()),
+      );
     } finally {
       discoveryLoading = false;
       renderDiscoveryTasks();
@@ -10042,10 +10459,17 @@ export function mountPlatform(
         "/api/workspace/upload?path=" + encodeURIComponent(file.name),
         { method: "PUT", headers: conversationHeaders(), body: file },
       );
-      if (!response.ok)
-        throw Error(
-          file.name + ": " + (await responseError(response, _("uploadFailed"))),
+      if (!response.ok) {
+        const detail = await responseError(response, "");
+        throw localizedUiError(
+          () =>
+            file.name +
+            ": " +
+            (detail
+              ? localizedError(detail, getUiLanguage())
+              : _("uploadFailed")),
         );
+      }
     }
     await refreshFiles();
   }
@@ -10161,6 +10585,10 @@ export function mountPlatform(
   mountConversationUI();
   mountMarkdownModeButtons();
   mountCandidateFormulaControl();
+  const unsubscribeLanguage = subscribeUiLanguage((language) => {
+    currentLocale = language === "en" ? "en" : "zh-CN";
+    applyLanguage();
+  });
   applyTheme();
   applyLanguage();
   selectCenterTab(
@@ -10178,11 +10606,13 @@ export function mountPlatform(
   account.type = "button";
   account.id = "account-settings";
   account.className = "header-toggle";
-  account.title = "账户与模型配置 / Account and models";
-  account.setAttribute("aria-label", account.title);
+  setLocalizedLabel(account, () => _("accountSettings"));
   account.textContent = "⚙";
   account.onclick = openSettings;
   document.querySelector("header").insertBefore(account, $("theme-toggle"));
 
-  return () => runtime.dispose();
+  return () => {
+    unsubscribeLanguage();
+    runtime.dispose();
+  };
 }

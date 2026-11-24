@@ -90,5 +90,6 @@ export type ModelSummary = {
 export type Conversation = {
   id: string;
   name: string;
+  defaultName?: boolean;
   models: Partial<Record<Role, string>>;
 };

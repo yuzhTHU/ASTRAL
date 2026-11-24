@@ -1,4 +1,10 @@
-import { api, type ModelSummary, type Role } from "@/lib/client";
+import { getUiLanguage, localizedError } from "../ui-language";
+import {
+  api,
+  type Conversation,
+  type ModelSummary,
+  type Role,
+} from "@/lib/client";
 
 /** Retain the three original settings dialogs; replace only their credential fields. */
 export function modelProfiles(
@@ -16,14 +22,17 @@ export function modelProfiles(
       "evaluator-agent-proxy",
     ],
   };
-  return async (role: Role) => {
-    if (!selected()) return;
+  const renderers = new Map<Role, () => void>();
+  async function load(role: Role) {
+    const conversationId = selected();
+    if (!conversationId) return;
     const [{ models }, { conversations }] = await Promise.all([
-      api("models"),
-      api("conversations"),
+      api<{ models: ModelSummary[] }>("models"),
+      api<{ conversations: Conversation[] }>("conversations"),
     ]);
-    if (!root.isConnected) return;
-    const conversation = conversations.find((c: any) => c.id === selected());
+    if (!root.isConnected || conversationId !== selected()) return;
+    const conversation = conversations.find((c) => c.id === conversationId);
+    if (!conversation) return;
     const first = root
       .querySelector<HTMLElement>(`#${inputs[role][0]}`)
       ?.closest("label");
@@ -49,55 +58,68 @@ export function modelProfiles(
       select = document.createElement("select"),
       summary = document.createElement("small"),
       button = document.createElement("button");
-    const en = document.documentElement.lang === "en";
-    title.textContent = en ? "Model configuration" : "模型配置";
     select.id = `${role}-model-profile`;
-    select.setAttribute("aria-label", `${role} model configuration`);
-    select.add(
-      new Option(
-        en
-          ? "Default (personal override / shared default)"
-          : "默认（个人覆盖 / 共享默认）",
-        "",
-      ),
-    );
-    for (const model of models as ModelSummary[])
-      select.add(
-        new Option(
-          `${model.name} · ${model.model}${model.shared ? (en ? " · Shared" : " · 共享") : ""}`,
-          model.id,
-        ),
-      );
+    select.add(new Option("", ""));
+    for (const model of models) select.add(new Option("", model.id));
     select.value = conversation?.models?.[role] || "";
-    function describe() {
+    let failure: unknown;
+    function renderLanguage() {
+      const lang = getUiLanguage(),
+        en = lang === "en";
+      const roleName = {
+        search: "搜索",
+        data: "数据准备",
+        evaluator: "评估器",
+      }[role];
+      title.textContent = en ? "Model configuration" : "模型配置";
+      select.setAttribute(
+        "aria-label",
+        en ? `${role} model configuration` : `${roleName}模型配置`,
+      );
+      select.options[0].text = en
+        ? "Default (personal override / shared default)"
+        : "默认（个人覆盖 / 共享默认）";
+      models.forEach((model, i) => {
+        select.options[i + 1].text =
+          `${model.name} · ${model.model}${model.shared ? (en ? " · Shared" : " · 共享") : ""}`;
+      });
+      button.textContent = en ? "Manage model configurations" : "管理模型配置";
       const current =
-        models.find((m: any) => m.id === select.value) ||
-        models.find((m: any) => m.isDefault && !m.shared) ||
-        models.find((m: any) => m.isDefault && m.shared);
-      summary.textContent = current
-        ? `${current.provider} · ${current.model} · ${current.endpoint || "Default endpoint"}`
-        : en
-          ? "Configure a model before running."
-          : "请先添加个人模型配置，或使用管理员发布的共享配置。";
+        models.find((m) => m.id === select.value) ||
+        models.find((m) => m.isDefault && !m.shared) ||
+        models.find((m) => m.isDefault && m.shared);
+      summary.textContent = failure
+        ? localizedError(failure, lang)
+        : current
+          ? `${current.provider} · ${current.model} · ${current.endpoint || (en ? "Default endpoint" : "默认端点")}`
+          : en
+            ? "Configure a model before running."
+            : "请先添加个人模型配置，或使用管理员发布的共享配置。";
     }
     select.onchange = async () => {
       select.disabled = true;
       try {
-        await api(`conversations/${selected()}`, "PATCH", {
+        await api(`conversations/${conversationId}`, "PATCH", {
           models: { ...conversation.models, [role]: select.value },
         });
-        describe();
+        failure = undefined;
       } catch (error) {
-        summary.textContent = String(error);
+        failure = error;
       } finally {
         select.disabled = false;
+        renderLanguage();
       }
     };
     button.type = "button";
-    button.textContent = en ? "Manage model configurations" : "管理模型配置";
     button.onclick = manage;
     label.append(title, select);
     host.append(label, summary, button);
-    describe();
-  };
+    renderers.set(role, renderLanguage);
+    renderLanguage();
+  }
+  return Object.assign(load, {
+    renderLanguage() {
+      renderers.forEach((render) => render());
+    },
+  });
 }
