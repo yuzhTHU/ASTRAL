@@ -9,6 +9,16 @@ Copy to context.evaluator/ and change only the class constants.
 * fit: candidate parameters on the training split only, with (s, eta) profiled at every step.
 * evaluate: the formula is held fixed; (s, eta) are profiled on the split being scored and
   gaussian_nll is the mean negative log-likelihood per object (lower is better).
+  gaussian_nll_se is its standard error (spread of the per-object terms / sqrt(n)): candidates
+  closer than this to the best score are not distinguished by the data.
+* likelihood_bic: 2 n gaussian_nll + k ln n, k = formula parameters + s (+ eta), on the split
+  being scored (also reported as bic; aic likewise). selection_bic is the training-split value,
+  reported on every split: rank candidates by it (lower is better, differences below 2 are ties)
+  and keep the validation gaussian_nll as the overfitting check.
+* literal guard: numbers other than the allowed literals are rejected, and so is any allowed
+  literal used as a coefficient or constant of an added term (``a + 2/x``, ``-2*pi + ...``):
+  those must be fitted parameters. Literals stay usable as structure (``x**2``, ``10**x``,
+  ``1 + x``) and inside function arguments (``exp(-(x - m)**2/2)``).
 """
 from __future__ import annotations
 
@@ -18,6 +28,7 @@ import numpy as np
 from scipy.optimize import minimize
 
 import sr_harness_engine as engine
+from sr_harness_engine.expression import Binary, Function, Unary
 from sr_harness.evaluator.default_evaluator import DefaultEvaluator
 from sr_harness.evaluator.utils import regression_metrics, select_random_indices
 
@@ -86,7 +97,10 @@ class ScatterRelationEvaluator(DefaultEvaluator):
         def part(idx):
             return context.with_data({k: np.asarray(v)[idx] for k, v in context.data.items()})
 
-        return {"train": part(train), "validation": part(val)}
+        splits = {"train": part(train), "validation": part(val)}
+        # Kept so that every split can report the training BIC as selection_bic (see evaluate).
+        cls._train_context = splits["train"]
+        return splits
 
     # -------------------------------------------------------------- symbolic
     @classmethod
@@ -104,6 +118,79 @@ class ScatterRelationEvaluator(DefaultEvaluator):
                 if not any(math.isclose(value, a, rel_tol=1e-9, abs_tol=1e-12) for a in cls.ALLOWED_LITERALS):
                     raise ValueError(f"Numeric literal {node.value!r} must be written as "
                                      "param('name', value=...) so it is fitted on the training split")
+        bad = cls._literal_coefficient(f)
+        if bad is not None:
+            raise ValueError(f"{bad} acts as a hand-set coefficient or constant; write it as "
+                             "param('name', value=...) so it is fitted on the training split")
+
+    @staticmethod
+    def _is_literal(node):
+        if isinstance(node, engine.Number):
+            return True
+        if isinstance(node, engine.Variable) and getattr(node, "name", None) in ("pi", "e"):
+            return True
+        if isinstance(node, Unary):
+            return ScatterRelationEvaluator._is_literal(node.operand)
+        if isinstance(node, Binary):
+            return ScatterRelationEvaluator._is_literal(node.left) and ScatterRelationEvaluator._is_literal(node.right)
+        if isinstance(node, Function):
+            return all(ScatterRelationEvaluator._is_literal(a) for a in node.arguments)
+        return False
+
+    @classmethod
+    def _literal_coefficient(cls, f):
+        """Return the text of a literal used as the coefficient or value of an added term, else None.
+
+        Added terms are those joined by + or - outside function arguments and exponents. A term
+        may not be made of literals only (1 is allowed inside a nested sum, not as the formula's own
+        constant), and none of its multiplied or divided
+        factors may be a literal other than 1.
+        """
+        def terms(node):
+            if isinstance(node, Binary) and node.operator in "+-":
+                return terms(node.left) + terms(node.right)
+            if isinstance(node, Unary):
+                return terms(node.operand)
+            return [node]
+
+        def factors(node):
+            if isinstance(node, Binary) and node.operator in "*/":
+                return factors(node.left) + factors(node.right)
+            if isinstance(node, Unary):
+                return factors(node.operand)
+            return [node]
+
+        def is_one(node):
+            try:
+                return math.isclose(abs(float(engine.evaluate(node, {}))), 1.0)
+            except Exception:
+                return False
+
+        def visit(node, top=False):
+            for term in terms(node):
+                if cls._is_literal(term):
+                    # The formula's own constant term must be fitted; 1 is structure only inside
+                    # a nested sum such as 1 + (x/x0)**a.
+                    if top or not is_one(term):
+                        return engine.render(term) if hasattr(engine, "render") else str(term)
+                    continue
+                for factor in factors(term):
+                    if cls._is_literal(factor):
+                        if not is_one(factor):
+                            return engine.render(factor) if hasattr(engine, "render") else str(factor)
+                    elif isinstance(factor, Binary) and factor.operator == "**":
+                        # A literal base (10**x) and the exponent are structure; look inside a
+                        # compound base such as (1 + 2/x)**a.
+                        found = None if cls._is_literal(factor.left) else visit(factor.left)
+                        if found:
+                            return found
+                    elif isinstance(factor, Binary) and factor.operator in "+-":
+                        found = visit(factor)
+                        if found:
+                            return found
+            return None
+
+        return visit(f, top=True)
 
     @classmethod
     def _predict(cls, f, X, parameters=None):
@@ -146,7 +233,13 @@ class ScatterRelationEvaluator(DefaultEvaluator):
                 best = r
         if best is None:
             raise ValueError("the noise model could not be fitted on this split")
-        return {"nll": float(best.fun), "intrinsic_scatter": math.exp(best.x[0]),
+        total = var + math.exp(2 * best.x[0])
+        terms = 0.5 * (log2pi + np.log(total)) + 0.5 * residual ** 2 / total
+        if cls.OUTLIERS:
+            eta = float(best.x[1])
+            terms = -np.logaddexp(math.log1p(-eta) - terms, math.log(eta) - log_span)
+        return {"nll": float(best.fun), "nll_se": float(np.std(terms) / math.sqrt(terms.size)),
+                "intrinsic_scatter": math.exp(best.x[0]),
                 "outlier_fraction": float(best.x[1]) if cls.OUTLIERS else 0.0}
 
     # -------------------------------------------------------------------- fit
@@ -208,6 +301,30 @@ class ScatterRelationEvaluator(DefaultEvaluator):
         metrics = regression_metrics(f, t["y"], pred)
         if float(np.ptp(pred)) == 0.0:  # correlations are undefined for a constant prediction
             metrics.update({k: 0.0 for k in ("pearson_r", "spearman_r") if k in metrics})
-        metrics.update(gaussian_nll=prof["nll"], intrinsic_scatter=prof["intrinsic_scatter"],
-                       outlier_fraction=prof["outlier_fraction"], n_samples=int(t["y"].size))
+        n = int(t["y"].size)
+        # Free quantities of the likelihood: the formula's parameters, the scatter s and, with
+        # OUTLIERS, the fraction eta. On the training split this is the usual BIC of the fit.
+        k = len({node.name for node in f.iter_preorder() if isinstance(node, engine.Parameter)})
+        k += 2 if cls.OUTLIERS else 1
+        metrics.update(gaussian_nll=prof["nll"], gaussian_nll_se=prof["nll_se"], intrinsic_scatter=prof["intrinsic_scatter"],
+                       outlier_fraction=prof["outlier_fraction"], n_samples=n,
+                       likelihood_bic=2.0 * n * prof["nll"] + k * math.log(n), likelihood_parameters=k)
+        # One information criterion only: the generic aic/bic from regression_metrics assume an
+        # unweighted Gaussian mse and disagree with this likelihood, so replace them.
+        metrics.update(aic=2.0 * n * prof["nll"] + 2 * k, bic=metrics["likelihood_bic"])
+        metrics["selection_bic"] = cls._selection_bic(f, k, metrics["likelihood_bic"])
         return metrics
+
+    @classmethod
+    def _selection_bic(cls, f, k, fallback):
+        """Training-split BIC of the fitted formula, reported on every split so the search can rank by it."""
+        train = getattr(cls, "_train_context", None)
+        if train is None:
+            return fallback
+        t = cls._table(train)
+        pred = cls._predict(f, t["X"])
+        if not np.isfinite(pred).all():
+            return fallback
+        prof = cls._profile(t["y"] - pred, t["sigma"], t["span"])
+        n = int(t["y"].size)
+        return 2.0 * n * prof["nll"] + k * math.log(n)
