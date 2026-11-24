@@ -30,6 +30,11 @@ test("administrator manages sample definitions, order and enabled state; ordinar
   await expect(
     page.locator(".discovery-task-table tbody tr[data-testid]"),
   ).toHaveCount(7);
+  const search = page.getByRole("textbox", { name: "搜索样例任务" });
+  await search.fill("no-such-sample");
+  await expect(page.getByText("没有符合筛选条件的任务")).toBeVisible();
+  await expect(page.getByText("清除筛选后可调整顺序。")).toBeVisible();
+  await page.getByRole("button", { name: "清除筛选" }).click();
   await page
     .getByTestId("task-Chen_NatureAstronomy2023")
     .getByRole("button", { name: /双模/ })
@@ -118,8 +123,8 @@ test("administrator manages sample definitions, order and enabled state; ordinar
   });
   await page.evaluate(() => localStorage.setItem("sr-harness-theme", "dark"));
   await page.reload();
-  await expect(page.locator(".admin-surface")).toHaveAttribute(
-    "data-theme",
+  await expect(page.locator(".admin-surface")).toHaveCSS(
+    "color-scheme",
     "dark",
   );
   await page

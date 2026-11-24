@@ -16,7 +16,7 @@ import {
   Input,
   Modal,
   Select,
-  Space,
+  Flex,
   Statistic,
   Table,
   Tag,
@@ -87,20 +87,32 @@ export function UserAdministration() {
   function toggle(user: User) {
     modal.confirm({
       title: user.disabled ? (
-        <LiveText zh="启用此账号？" en="Enable account?" />
+        <LiveText
+          zh={`启用账号“${user.username}”？`}
+          en={`Enable account “${user.username}”?`}
+        />
       ) : (
-        <LiveText zh="禁用此账号？" en="Disable account?" />
+        <LiveText
+          zh={`禁用账号“${user.username}”？`}
+          en={`Disable account “${user.username}”?`}
+        />
       ),
-      content: (
-        <>
-          {user.username} ·{" "}
-          <LiveText
-            zh="修改后会撤销该用户当前登录状态。"
-            en="This change signs the user out of all sessions."
-          />
-        </>
+      content: user.disabled ? (
+        <LiveText
+          zh="该用户可以重新登录。"
+          en="This user will be able to sign in again."
+        />
+      ) : (
+        <LiveText
+          zh="该用户的所有登录会话将立即失效。"
+          en="This user will be signed out of all sessions immediately."
+        />
       ),
-      okText: <LiveText zh="确认" en="Confirm" />,
+      okText: user.disabled ? (
+        <LiveText zh="启用账号" en="Enable account" />
+      ) : (
+        <LiveText zh="禁用账号" en="Disable account" />
+      ),
       cancelText: <LiveText zh="取消" en="Cancel" />,
       okButtonProps: { danger: !user.disabled },
       onOk: async () => {
@@ -116,20 +128,12 @@ export function UserAdministration() {
     });
   }
   return (
-    <main className="admin-page">
-      <div className="admin-page-heading">
-        <div>
-          <Typography.Title level={2}>
-            {t("账号与注册", "Accounts")}
-          </Typography.Title>
-          <p>
-            {t(
-              "管理平台访问、注册策略与用户账号。",
-              "Manage access to the platform, registration policies and user accounts.",
-            )}
-          </p>
-        </div>
-        <Space>
+    <section className="admin-page" aria-labelledby="accounts-title">
+      <header className="admin-page-heading">
+        <Typography.Title id="accounts-title" level={1}>
+          {t("账号与注册", "Accounts")}
+        </Typography.Title>
+        <Flex gap="small" align="center">
           <Button
             icon={<ReloadOutlined aria-hidden />}
             onClick={refresh}
@@ -147,8 +151,8 @@ export function UserAdministration() {
           >
             {t("创建用户", "Create user")}
           </Button>
-        </Space>
-      </div>
+        </Flex>
+      </header>
       <div className="admin-stats">
         <Card>
           <Statistic title={t("全部账号", "Total")} value={users.length} />
@@ -161,7 +165,7 @@ export function UserAdministration() {
         </Card>
         <Card>
           <Statistic
-            title={t("管理员", "Administrators")}
+            title={t("管理员", "Admins")}
             value={users.filter((u) => u.role === "admin").length}
           />
         </Card>
@@ -179,9 +183,10 @@ export function UserAdministration() {
         />
       )}
       <Card title={t("注册策略", "Registration")} style={{ marginBottom: 24 }}>
-        <Space wrap size="large">
+        <Flex gap="large" align="center" wrap>
           <Select
             virtual={false}
+            id="registration-mode"
             aria-label={t("注册策略", "Registration mode")}
             value={mode}
             disabled={busy || loading}
@@ -212,13 +217,12 @@ export function UserAdministration() {
           >
             {t("创建邀请", "Create invitation")}
           </Button>
-          <Typography.Text type="secondary">
-            {t(
-              "关闭开放注册后，既有账号仍可登录。",
-              "Existing users can still sign in when open registration is closed.",
-            )}
-          </Typography.Text>
-        </Space>
+          {mode !== "open" && (
+            <Typography.Text type="secondary">
+              {t("已有账号仍可登录。", "Existing users can still sign in.")}
+            </Typography.Text>
+          )}
+        </Flex>
         {invitation && (
           <Alert
             style={{ marginTop: 16 }}
@@ -240,7 +244,7 @@ export function UserAdministration() {
         )}
       </Card>
       <Card title={t("用户列表", "Users")}>
-        <div className="admin-toolbar">
+        <search className="admin-toolbar">
           <Input
             className="admin-search"
             aria-label={t("搜索用户", "Search users")}
@@ -254,7 +258,7 @@ export function UserAdministration() {
             }}
             onChange={(e) => setQuery(e.target.value)}
           />
-        </div>
+        </search>
         <Table<User>
           rowKey="id"
           loading={loading}
@@ -298,7 +302,7 @@ export function UserAdministration() {
                     {t("管理员账号", "Administrator account")}
                   </Typography.Text>
                 ) : (
-                  <Space>
+                  <Flex gap="small" align="center">
                     <Button
                       size="small"
                       disabled={busy}
@@ -319,7 +323,7 @@ export function UserAdministration() {
                     >
                       {t("重置密码", "Reset password")}
                     </Button>
-                  </Space>
+                  </Flex>
                 ),
             },
           ]}
@@ -333,6 +337,7 @@ export function UserAdministration() {
         destroyOnHidden
       >
         <Form
+          name="create-account"
           form={createForm}
           layout="vertical"
           onFinish={async (values) => {
@@ -383,14 +388,14 @@ export function UserAdministration() {
               autoComplete="new-password"
             />
           </Form.Item>
-          <Space>
+          <Flex gap="small" align="center">
             <Button type="primary" htmlType="submit" loading={busy}>
               {t("创建", "Create")}
             </Button>
             <Button onClick={() => setCreating(false)}>
               {t("取消", "Cancel")}
             </Button>
-          </Space>
+          </Flex>
         </Form>
       </Modal>
       <Modal
@@ -405,11 +410,12 @@ export function UserAdministration() {
           type="info"
           showIcon
           title={t(
-            "密码更新后，该用户的所有登录状态将被撤销。",
-            "Updating the password signs the user out of all sessions.",
+            "重置后，该用户需要用新密码重新登录。",
+            "This user will need to sign in again with the new password.",
           )}
         />
         <Form
+          name="reset-password"
           form={passwordForm}
           layout="vertical"
           onFinish={async (values) => {
@@ -448,6 +454,6 @@ export function UserAdministration() {
           </Button>
         </Form>
       </Modal>
-    </main>
+    </section>
   );
 }

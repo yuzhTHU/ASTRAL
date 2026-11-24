@@ -26,10 +26,14 @@ test("ordinary users can inspect but cannot modify shared tool settings", async 
   );
   await tools.getByLabel("配置范围").click();
   await expect(tools.getByRole("option")).toHaveCount(2);
-  await tools.getByRole("option", { name: "Agent 覆盖", exact: true }).click();
+  await tools
+    .getByRole("option", { name: "Agent 专用设置", exact: true })
+    .click();
+  await expect(
+    tools.getByText("只读。修改配置和测试连接需要管理员权限。"),
+  ).toBeVisible();
   await expect(tools.getByLabel("Configuration session")).toHaveCount(0);
-
-  await expect(tools.getByLabel("Configuration session")).toHaveCount(0);
+  await expect(tools.getByRole("button", { name: "测试连接" })).toBeDisabled();
   await expect(
     tools.getByLabel("请求超时（秒）", { exact: true }),
   ).toBeDisabled();
@@ -108,12 +112,15 @@ test("shared Agent overrides and global defaults require no research session", a
   await page.keyboard.press("Escape");
   await expect(page).not.toHaveURL(/session=/);
   await choose(page, "连接方式", "自定义代理");
+  await expect(page.getByText(/填写 Harness 服务器可访问的/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "测试连接" })).toBeDisabled();
+  await expect(page.getByText("先保存修改，再测试连接。")).toBeVisible();
   await page
     .getByLabel("代理地址", { exact: true })
     .fill("http://proxy.test:8899");
   await save("2.5");
   await expect(source).toContainText("全局默认值");
-  await choose(page, "配置范围", "Agent 覆盖");
+  await choose(page, "配置范围", "Agent 专用设置");
   await expect(timeout).toHaveValue("2.5");
   await expect(page.getByLabel("Configuration session")).toHaveCount(0);
   const saved = await save("7.5");
@@ -129,7 +136,7 @@ test("shared Agent overrides and global defaults require no research session", a
   await page.reload();
   await expect(timeout).toHaveValue("7.5");
   await page.getByLabel("测试目标").fill("https://example.com/science");
-  await page.getByRole("button", { name: "测试已保存配置" }).click();
+  await page.getByRole("button", { name: "测试连接" }).click();
   await expect(page.getByTestId("tool-test-result")).toContainText("连接成功");
   await choose(page, "配置的 Agent", "符号回归");
   await expect(timeout).toHaveValue("2.5");
@@ -139,12 +146,12 @@ test("shared Agent overrides and global defaults require no research session", a
   await choose(page, "配置范围", "全局默认值");
   await expect(timeout).toHaveValue("2.5");
   await save("9.5");
-  await choose(page, "配置范围", "Agent 覆盖");
+  await choose(page, "配置范围", "Agent 专用设置");
   await choose(page, "配置的 Agent", "数据准备");
   await expect(timeout).toHaveValue("7.5");
   await page
     .getByRole("button", {
-      name: "取消覆盖，使用上级默认值",
+      name: "清除专用设置",
     })
     .click();
   await expect(source).toContainText("全局默认值");

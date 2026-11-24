@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import "./globals.css";
 import "./admin.css";
-import "./user-menu.css";
+import "./header.css";
 import "katex/dist/katex.min.css";
 export const metadata: Metadata = {
   title: "ASTRAL",

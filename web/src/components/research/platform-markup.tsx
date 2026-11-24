@@ -1,18 +1,12 @@
+import { AstralWordmark } from "../astral-wordmark";
+
 // Layout and controls ported from the original ASTRAL workbench.
 export function PlatformMarkup() {
   return (
     <>
       <header>
         <div className={"brand"}>
-          <div className={"logo"}>
-            <img
-              src={"/favicon.svg?v=astral-2"}
-              alt={""}
-              width={30}
-              height={30}
-            />
-            {"ASTRAL\n    "}
-          </div>
+          <AstralWordmark />
           <span id={"app-version"} className={"app-version"}></span>
         </div>
         <span className={"spacer"}></span>

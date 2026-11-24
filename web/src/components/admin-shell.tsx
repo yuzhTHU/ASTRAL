@@ -1,26 +1,16 @@
 "use client";
+import { AstralWordmark } from "./astral-wordmark";
 import { LanguageButton } from "./language-button";
 import { localizedError, useUiLanguage } from "./ui-language";
 import { useManagementText } from "./management-text";
 
-import {
-  Alert,
-  Button,
-  Layout,
-  Menu,
-  Result,
-  Space,
-  Spin,
-  Tag,
-  Typography,
-} from "antd";
+import { Alert, Button, Result, Spin } from "antd";
 import {
   ArrowLeftOutlined,
   ExperimentOutlined,
   TeamOutlined,
   ToolOutlined,
   ApiOutlined,
-  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
@@ -43,28 +33,26 @@ export function AdminShell({ children }: { children: ReactNode }) {
       .then(setIdentity)
       .catch((e) => setFailure(String(e)));
   }, []);
-  const items = [
+  const destinations = [
     {
-      key: "/admin",
+      href: "/admin",
       icon: <TeamOutlined aria-hidden />,
-      label: <Link href="/admin">{t("账号与注册", "Accounts")}</Link>,
+      label: t("账号与注册", "Accounts"),
     },
     {
-      key: "/admin/discovery-tasks",
+      href: "/admin/discovery-tasks",
       icon: <ExperimentOutlined aria-hidden />,
-      label: (
-        <Link href="/admin/discovery-tasks">{t("样例任务", "Samples")}</Link>
-      ),
+      label: t("样例任务", "Samples"),
     },
     {
-      key: "/admin/models",
+      href: "/admin/models",
       icon: <ApiOutlined aria-hidden />,
-      label: <Link href="/admin/models">{t("共享模型", "Models")}</Link>,
+      label: t("共享模型", "Models"),
     },
     {
-      key: "/admin/tools",
+      href: "/admin/tools",
       icon: <ToolOutlined aria-hidden />,
-      label: <Link href="/admin/tools">{t("工具配置", "Tools")}</Link>,
+      label: t("工具配置", "Tools"),
     },
   ];
   return (
@@ -90,58 +78,65 @@ export function AdminShell({ children }: { children: ReactNode }) {
           status="403"
           title={t("仅管理员可访问", "Administrators only")}
           extra={
-            <Space>
+            <div className="admin-access-actions">
               <LanguageButton />
               <Button href="/">{t("返回工作台", "Workbench")}</Button>
-            </Space>
+            </div>
           }
         />
       ) : (
-        <Layout className="admin-layout">
-          <Layout.Header className="admin-header">
-            <Link href="/admin" className="admin-brand">
-              <span className="admin-brand-mark">A</span>
-              <span>
-                ASTRAL <small>{t("管理控制台", "Administration")}</small>
+        <div className="admin-layout">
+          <header id="admin-header" className="admin-header">
+            <Link
+              href="/admin"
+              id="admin-home-link"
+              className="admin-brand"
+              aria-label={t("ASTRAL 管理控制台", "ASTRAL Administration")}
+            >
+              <AstralWordmark />
+              <span className="admin-section-name">
+                {t("管理控制台", "Administration")}
               </span>
             </Link>
-            <Space size="middle">
-              <Tag
-                icon={<SafetyCertificateOutlined aria-hidden />}
-                color="blue"
-              >
-                {t("管理员", "Administrator")}
-              </Tag>
-              <LanguageButton />
-              <UserAccountMenu username={identity.username} />
-              <Button icon={<ArrowLeftOutlined aria-hidden />} href="/">
-                {t("返回工作台", "Back to workbench")}
-              </Button>
-            </Space>
-          </Layout.Header>
-          <Layout>
-            <Layout.Sider
-              width={246}
-              className="admin-sidebar"
-              breakpoint="lg"
-              collapsedWidth={0}
+            <LanguageButton
+              id="admin-language-toggle"
+              className="header-toggle language-toggle"
+            />
+            <UserAccountMenu
+              id="admin-account-menu-trigger"
+              username={identity.username}
+            />
+            <Link
+              href="/"
+              id="admin-workbench-link"
+              className="header-toggle admin-workbench-link"
+              aria-label={t("返回工作台", "Back to workbench")}
+              title={t("返回工作台", "Back to workbench")}
             >
-              <Typography.Text type="secondary" className="admin-nav-caption">
-                {t("平台管理", "PLATFORM")}
-              </Typography.Text>
-              <Menu mode="inline" selectedKeys={[path]} items={items} />
-              <div className="admin-sidebar-note">
-                {t("ASTRAL · 科研平台", "ASTRAL · Research platform")}
-              </div>
-            </Layout.Sider>
-            <Layout.Content className="admin-content">
-              <nav className="admin-mobile-nav">
-                <Menu mode="horizontal" selectedKeys={[path]} items={items} />
-              </nav>
-              {children}
-            </Layout.Content>
-          </Layout>
-        </Layout>
+              <ArrowLeftOutlined aria-hidden />
+              <span>{t("返回工作台", "Back to workbench")}</span>
+            </Link>
+          </header>
+          <nav
+            id="admin-navigation"
+            className="admin-navigation"
+            aria-label={t("管理导航", "Administration")}
+          >
+            {destinations.map(({ href, icon, label }) => (
+              <Link
+                key={href}
+                href={href}
+                aria-current={path === href ? "page" : undefined}
+              >
+                {icon}
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <main id="admin-main" className="admin-content">
+            {children}
+          </main>
+        </div>
       )}
     </ManagementSurface>
   );

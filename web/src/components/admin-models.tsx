@@ -17,7 +17,7 @@ import {
   Form,
   Input,
   Select,
-  Space,
+  Flex,
   Table,
   Tag,
   Typography,
@@ -162,20 +162,12 @@ export function AdminModels() {
     });
   }
   return (
-    <main className="admin-page">
-      <div className="admin-page-heading">
-        <div>
-          <Typography.Title level={2}>
-            {t("共享模型", "Shared models")}
-          </Typography.Title>
-          <p>
-            {t(
-              "发布供用户选择的模型配置，完整管理供应商、Endpoint 与凭据。",
-              "Publish model configurations and manage their providers, endpoints and credentials.",
-            )}
-          </p>
-        </div>
-        <Space>
+    <section className="admin-page" aria-labelledby="models-title">
+      <header className="admin-page-heading">
+        <Typography.Title id="models-title" level={1}>
+          {t("共享模型", "Shared models")}
+        </Typography.Title>
+        <Flex gap="small" align="center">
           <Button
             icon={<ReloadOutlined aria-hidden />}
             disabled={busy}
@@ -190,8 +182,8 @@ export function AdminModels() {
           >
             {t("添加共享模型", "Add model")}
           </Button>
-        </Space>
-      </div>
+        </Flex>
+      </header>
       {notice && !open && (
         <Alert
           className="admin-notice"
@@ -209,12 +201,8 @@ export function AdminModels() {
         type="info"
         showIcon
         title={t(
-          "共享默认配置可被个人配置整组覆盖",
-          "Personal configurations can override the shared defaults",
-        )}
-        description={t(
-          "密钥不会回显；编辑时留空可保留原有密钥。个人配置失败时不会自动切换到共享付费配置。",
-          "Keys are hidden. Leave the key blank when editing to keep it. If a personal configuration fails, the platform will not switch to a shared paid configuration.",
+          "优先使用个人默认模型。调用失败时会报错，不会自动改用共享模型。",
+          "Personal defaults take priority. If a call fails, it returns an error without retrying with the shared model.",
         )}
       />
       <Card>
@@ -229,7 +217,7 @@ export function AdminModels() {
               title: t("配置名称", "Name"),
               dataIndex: "name",
               render: (name: string, model) => (
-                <Space orientation="vertical" size={2}>
+                <Flex orientation="vertical" align="flex-start" gap={2}>
                   <Button
                     type="link"
                     className="admin-table-title"
@@ -240,7 +228,7 @@ export function AdminModels() {
                   {model.isDefault && (
                     <Tag color="blue">{t("共享默认", "Default")}</Tag>
                   )}
-                </Space>
+                </Flex>
               ),
             },
             {
@@ -298,7 +286,7 @@ export function AdminModels() {
         onClose={close}
         forceRender
         footer={
-          <Space style={{ width: "100%", justifyContent: "flex-end" }}>
+          <Flex gap="small" justify="flex-end">
             <Button onClick={close} disabled={busy}>
               {t("取消", "Cancel")}
             </Button>
@@ -310,7 +298,7 @@ export function AdminModels() {
             >
               {t("保存模型", "Save model")}
             </Button>
-          </Space>
+          </Flex>
         }
       >
         {notice && "error" in notice && (
@@ -326,6 +314,7 @@ export function AdminModels() {
           />
         )}
         <Form
+          name="shared-model"
           form={form}
           layout="vertical"
           disabled={busy}
@@ -450,8 +439,8 @@ export function AdminModels() {
               editing
                 ? t("留空保留当前密钥", "Leave empty to keep existing key")
                 : t(
-                    "密钥加密保存，不会通过普通接口返回。",
-                    "Keys are stored encrypted and are never returned by the standard API.",
+                    "密钥加密保存，保存后无法查看原文。",
+                    "The key is stored encrypted. You can replace it after saving, but cannot view it again.",
                   )
             }
           >
@@ -465,6 +454,6 @@ export function AdminModels() {
           </Form.Item>
         </Form>
       </Drawer>
-    </main>
+    </section>
   );
 }

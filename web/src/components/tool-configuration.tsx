@@ -18,7 +18,7 @@ import {
   Row,
   Select,
   Skeleton,
-  Space,
+  Flex,
   Tag,
   Typography,
 } from "antd";
@@ -91,10 +91,10 @@ export function ToolConfigurationPage({
   ) : (
     <ManagementSurface>
       <div className="admin-standalone">
-        <Space>
+        <Flex gap="small" align="center">
           <Button href="/">{t("← 返回科研工作台", "← Workbench")}</Button>
           <LanguageButton />
-        </Space>
+        </Flex>
         <ToolConfigurationContent />
       </div>
     </ManagementSurface>
@@ -132,7 +132,7 @@ function ToolConfigurationContent({
   const sourceNames = {
     builtin: t("内置默认值", "Built-in defaults"),
     global: t("全局默认值", "Global defaults"),
-    agent: t("Agent 覆盖", "Agent override"),
+    agent: t("Agent 专用设置", "Agent-specific settings"),
   };
   useEffect(() => {
     Promise.all([api("tool-catalog"), api("auth/me")])
@@ -203,63 +203,51 @@ function ToolConfigurationContent({
       setBusy(false);
     }
   }
+  const PageRegion = embedded ? "section" : "main";
   return (
-    <main className="admin-page tool-configuration-page">
-      <div
+    <PageRegion
+      className="admin-page tool-configuration-page"
+      aria-labelledby="tool-settings-title"
+    >
+      <header
         className="admin-page-heading"
         style={embedded ? undefined : { marginTop: 24 }}
       >
-        <div>
-          <Typography.Title level={2}>
-            {t("工具配置", "Tool configuration")}
-          </Typography.Title>
-          <p>
+        <Typography.Title id="tool-settings-title" level={1}>
+          {t("工具配置", "Tool configuration")}
+        </Typography.Title>
+        {initialized && !canEdit && (
+          <Typography.Text type="secondary">
             {t(
-              "全局默认值统一生效，按需为 Agent 类型单独覆盖。",
-              "Global defaults apply to all agents. Override them for individual agent types as needed.",
+              "只读。修改配置和测试连接需要管理员权限。",
+              "Read only. An administrator can edit settings and test connections.",
             )}
-          </p>
-        </div>
-        <Tag color={administrator ? "blue" : "default"}>
-          {administrator
-            ? t("管理员", "Administrator")
-            : t("只读", "Read only")}
-        </Tag>
-      </div>
-      <Alert
-        className="admin-notice"
-        type="info"
-        showIcon
-        title={t(
-          "Agent 覆盖 → 全局默认值 → 内置默认值",
-          "Agent override → global defaults → built-in defaults",
+          </Typography.Text>
         )}
-        description={t(
-          "CLI 与本页面使用同一套 Harness 配置。代理地址从 Harness 中访问，支持不含认证信息的 HTTP/HTTPS 代理。",
-          "The CLI and this page share the same Harness configuration. Harness connects to HTTP or HTTPS proxies that do not require credentials.",
-        )}
-      />
-      {initialized && !administrator && (
-        <Alert
-          className="admin-notice"
-          type="warning"
-          showIcon
-          title={t(
-            "全局默认值和 Agent 类型覆盖由管理员统一管理。",
-            "Administrators manage global defaults and agent overrides.",
-          )}
-        />
-      )}
+      </header>
       <Card style={{ marginBottom: 24 }}>
         <Row gutter={[20, 16]}>
           <Col xs={24} md={8}>
             <Form.Item
+              htmlFor="tool-settings-scope"
               label={t("配置范围", "Scope")}
+              extra={
+                scope === "global"
+                  ? t(
+                      "没有全局设置时，使用工具内置值。",
+                      "The tool uses its built-in defaults until you set global defaults.",
+                    )
+                  : t(
+                      "单独保存的设置优先于全局默认值。",
+                      "Settings saved for this agent override the global defaults.",
+                    )
+              }
               layout="vertical"
               style={{ margin: 0 }}
             >
               <Select
                 virtual={false}
+                id="tool-settings-scope"
                 aria-label={t("配置范围", "Configuration scope")}
                 value={scope}
                 disabled={busy || !initialized}
@@ -270,19 +258,25 @@ function ToolConfigurationContent({
                     value: "global",
                     label: t("全局默认值", "Global defaults"),
                   },
-                  { value: "agent", label: t("Agent 覆盖", "Agent override") },
+                  {
+                    value: "agent",
+                    label: t("Agent 专用设置", "Agent-specific settings"),
+                  },
                 ]}
               />
             </Form.Item>
           </Col>
           <Col xs={24} md={8}>
             <Form.Item
+              htmlFor="tool-settings-tool"
               label={t("工具", "Tool")}
+              extra={definition && capabilityDescription(definition, lang)}
               layout="vertical"
               style={{ margin: 0 }}
             >
               <Select
                 virtual={false}
+                id="tool-settings-tool"
                 aria-label={t("可配置工具", "Configurable tool")}
                 value={tool}
                 disabled={busy || !initialized}
@@ -294,9 +288,15 @@ function ToolConfigurationContent({
           </Col>
           {scope === "agent" && (
             <Col xs={24} md={8}>
-              <Form.Item label="Agent" layout="vertical" style={{ margin: 0 }}>
+              <Form.Item
+                htmlFor="tool-settings-agent"
+                label="Agent"
+                layout="vertical"
+                style={{ margin: 0 }}
+              >
                 <Select
                   virtual={false}
+                  id="tool-settings-agent"
                   aria-label={t("配置的 Agent", "Configuration agent")}
                   value={role}
                   disabled={busy || !initialized}
@@ -326,7 +326,7 @@ function ToolConfigurationContent({
                     "Saved. Changes take effect on the next tool call.",
                   )
                 : message === "restored"
-                  ? t("已恢复继承默认配置", "Inherited defaults restored")
+                  ? t("已恢复默认设置", "Defaults restored")
                   : localizedError(message.error, lang)}
             </span>
           }
@@ -350,11 +350,8 @@ function ToolConfigurationContent({
                 </Tag>
               }
             >
-              <Typography.Paragraph type="secondary">
-                {capabilityDescription(definition, lang)}
-              </Typography.Paragraph>
               <Typography.Paragraph data-testid="configuration-source">
-                {t("当前生效来源：", "Source: ")}
+                {t("当前使用：", "Using: ")}
                 <Tag color="blue">{sourceNames[record.source]}</Tag>
               </Typography.Paragraph>
               <Form
@@ -366,6 +363,7 @@ function ToolConfigurationContent({
                 {Object.entries(definition.configuration_schema.properties).map(
                   ([name, property]) => {
                     const label = propertyTitle(name, property, t);
+                    const fieldId = `tool-setting-${name}`;
                     const isProxy = name === "proxy_url";
                     const change = (value: unknown) => {
                       setDraft((old) => ({
@@ -381,12 +379,14 @@ function ToolConfigurationContent({
                     return (
                       <Form.Item
                         key={name}
+                        htmlFor={fieldId}
                         label={label}
                         extra={
-                          isProxy && property.description
-                            ? t(
-                                "使用不含凭据的 HTTP/HTTPS 代理。地址由 Harness 解析。",
-                                property.description,
+                          isProxy
+                            ? draft.proxy_mode === "custom" &&
+                              t(
+                                "填写 Harness 服务器可访问的 HTTP 或 HTTPS 代理地址，只含协议、主机和可选端口。",
+                                "Enter an HTTP or HTTPS proxy reachable from the Harness server. Include only the scheme, host and optional port.",
                               )
                             : property.description
                         }
@@ -394,6 +394,7 @@ function ToolConfigurationContent({
                         {property.enum ? (
                           <Select
                             virtual={false}
+                            id={fieldId}
                             aria-label={label}
                             value={draft[name] ?? ""}
                             onChange={change}
@@ -409,6 +410,7 @@ function ToolConfigurationContent({
                           />
                         ) : property.type === "number" ? (
                           <InputNumber
+                            id={fieldId}
                             aria-label={label}
                             controls={{
                               upIcon: <UpOutlined aria-hidden />,
@@ -438,8 +440,14 @@ function ToolConfigurationContent({
                           />
                         ) : (
                           <Input
+                            id={fieldId}
                             aria-label={label}
                             type={isProxy ? "url" : "text"}
+                            placeholder={
+                              isProxy && draft.proxy_mode === "custom"
+                                ? "https://proxy.example.org:8080"
+                                : undefined
+                            }
                             disabled={
                               busy ||
                               !canEdit ||
@@ -455,7 +463,7 @@ function ToolConfigurationContent({
                     );
                   },
                 )}
-                <Space wrap>
+                <Flex gap="small" align="center" wrap>
                   <Button
                     type="primary"
                     icon={<SaveOutlined aria-hidden />}
@@ -489,42 +497,43 @@ function ToolConfigurationContent({
                   >
                     {scope === "global"
                       ? t("恢复内置默认值", "Reset defaults")
-                      : t("取消覆盖，使用上级默认值", "Inherit defaults")}
+                      : t("清除专用设置", "Clear agent settings")}
                   </Button>
-                </Space>
+                </Flex>
               </Form>
             </Card>
           </Col>
           <Col xs={24} xl={10}>
             <Card
               title={
-                <Space>
+                <Flex gap="small" align="center">
                   <ExperimentOutlined aria-hidden />
                   {t("连接测试", "Connection test")}
-                </Space>
+                </Flex>
               }
             >
               <Typography.Paragraph type="secondary">
                 {t(
-                  "测试已保存的配置，不会启动 Agent 或调用大模型。",
-                  "Test the saved configuration without starting an agent or calling a model.",
+                  "测试使用已保存的配置，不会启动 Agent 或调用模型。",
+                  "Tests use the saved settings without starting an agent or calling a model.",
                 )}
               </Typography.Paragraph>
-              <Form layout="vertical">
-                <Form.Item
-                  label={
-                    tool === "web_fetch"
-                      ? t("公开页面地址", "Public URL")
-                      : t("搜索词", "Query")
-                  }
-                >
-                  <Input
-                    aria-label={t("测试目标", "Tool test target")}
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                  />
-                </Form.Item>
-              </Form>
+              <Form.Item
+                layout="vertical"
+                htmlFor="tool-test-target"
+                label={
+                  tool === "web_fetch"
+                    ? t("公开页面地址", "Public URL")
+                    : t("搜索词", "Query")
+                }
+              >
+                <Input
+                  id="tool-test-target"
+                  aria-label={t("测试目标", "Tool test target")}
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                />
+              </Form.Item>
               <Button
                 type="primary"
                 ghost
@@ -549,7 +558,7 @@ function ToolConfigurationContent({
                   }
                 }}
               >
-                {t("测试已保存配置", "Test saved configuration")}
+                {t("测试连接", "Test connection")}
               </Button>
               {dirty && (
                 <Alert
@@ -557,8 +566,8 @@ function ToolConfigurationContent({
                   type="warning"
                   showIcon
                   title={t(
-                    "请先保存修改，再测试连接。",
-                    "Save your changes before testing the connection.",
+                    "先保存修改，再测试连接。",
+                    "Save your changes before testing.",
                   )}
                 />
               )}
@@ -580,6 +589,6 @@ function ToolConfigurationContent({
           </Col>
         </Row>
       )}
-    </main>
+    </PageRegion>
   );
 }

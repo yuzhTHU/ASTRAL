@@ -1,0 +1,83 @@
+.astral-wordmark {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  white-space: nowrap;
+  font:
+    750 23px/1.6 Inter,
+    system-ui,
+    sans-serif;
+  letter-spacing: 1.2px;
+}
+.astral-wordmark img {
+  flex: none;
+  margin-right: 9px;
+  border-radius: 8px;
+}
+:where(.admin-header, .research-workbench > header) .header-toggle {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 31px;
+  height: 31px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--interactive-surface);
+  color: var(--muted);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  text-decoration: none;
+}
+:where(.admin-header, .research-workbench > header) .header-toggle:hover {
+  border-color: #b4c0d7;
+  background: var(--header-hover-bg, #ebeff6);
+  color: var(--accent);
+}
+:where(.admin-header, .research-workbench > header) .language-toggle {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.header-toggle.user-account-trigger,
+.header-toggle.admin-workbench-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: auto;
+  max-width: 220px;
+  padding: 0 9px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+.user-account-name {
+  min-width: 0;
+  max-width: 160px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.header-toggle.user-account-trigger .anticon {
+  font-size: 9px;
+}
+@media (max-width: 850px) {
+  .astral-wordmark {
+    font-size: 19px;
+  }
+}
+@media (max-width: 600px) {
+  .astral-wordmark img {
+    width: 26px;
+    height: 26px;
+    margin-right: 7px;
+  }
+  .header-toggle.user-account-trigger {
+    min-width: 0;
+    flex-shrink: 1;
+  }
+  .user-account-name {
+    max-width: 68px;
+  }
+}

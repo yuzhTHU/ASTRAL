@@ -19,7 +19,7 @@ import {
   Form,
   Input,
   Select,
-  Space,
+  Flex,
   Statistic,
   Table,
   Tabs,
@@ -221,11 +221,16 @@ export function DiscoveryTaskManagement() {
   function remove() {
     if (!selected || !catalog) return;
     modal.confirm({
-      title: <LiveText zh="删除任务？" en="Delete task?" />,
+      title: (
+        <LiveText
+          zh={`删除“${selected.subject_zh || selected.name}”？`}
+          en={`Delete “${selected.title || selected.name}”?`}
+        />
+      ),
       content: (
         <LiveText
-          zh="原始数据和已加载会话会保留。任务将从样例列表中移除。"
-          en="The task will be removed from the sample list. Its original data and existing sessions are preserved."
+          zh="原始数据和已加载的会话会保留。删除后无法复用此任务标识。"
+          en="The original data and existing sessions will be preserved. This task identifier cannot be reused."
         />
       ),
       okText: <LiveText zh="确认删除" en="Delete" />,
@@ -242,30 +247,23 @@ export function DiscoveryTaskManagement() {
       },
     });
   }
+  const searchTerm = query.trim().toLowerCase();
   const filtered =
     catalog?.tasks.filter(
       (t) =>
         [t.name, t.topic, t.subject_zh, t.title].some((v) =>
-          v.toLowerCase().includes(query.toLowerCase()),
+          v.toLowerCase().includes(searchTerm),
         ) &&
         (status === "all" || t.enabled === (status === "enabled")),
     ) || [];
-  const filteredOrder = query.trim() !== "" || status !== "all";
+  const filteredOrder = searchTerm !== "" || status !== "all";
   return (
-    <main className="admin-page">
-      <div className="admin-page-heading">
-        <div>
-          <Typography.Title level={2}>
-            {t("样例任务", "Sample tasks")}
-          </Typography.Title>
-          <p>
-            {t(
-              "维护科研任务、阶段提示词与共享数据入口。",
-              "Manage research tasks, stage prompts and shared data locations.",
-            )}
-          </p>
-        </div>
-        <Space>
+    <section className="admin-page" aria-labelledby="sample-tasks-title">
+      <header className="admin-page-heading">
+        <Typography.Title id="sample-tasks-title" level={1}>
+          {t("样例任务", "Sample tasks")}
+        </Typography.Title>
+        <Flex gap="small" align="center">
           <Button
             icon={<ReloadOutlined aria-hidden />}
             disabled={busy}
@@ -287,8 +285,8 @@ export function DiscoveryTaskManagement() {
           >
             {t("添加任务", "Add task")}
           </Button>
-        </Space>
-      </div>
+        </Flex>
+      </header>
       <div className="admin-stats">
         <Card>
           <Statistic
@@ -322,12 +320,15 @@ export function DiscoveryTaskManagement() {
         />
       )}
       <Card>
-        <div className="admin-toolbar">
+        <search className="admin-toolbar">
           <Input
             className="admin-search"
             aria-label={t("搜索样例任务", "Search sample tasks")}
             prefix={<SearchOutlined aria-hidden />}
-            placeholder={t("搜索名称、分类或论文", "Search")}
+            placeholder={t(
+              "搜索任务、分类或论文标题",
+              "Search by task, topic or paper title",
+            )}
             allowClear={{
               clearIcon: (
                 <CloseCircleFilled aria-label={t("清除搜索", "Clear search")} />
@@ -338,6 +339,7 @@ export function DiscoveryTaskManagement() {
           />
           <Select
             virtual={false}
+            id="sample-task-status"
             aria-label={t("样例任务状态", "Sample task status")}
             value={status}
             onChange={setStatus}
@@ -348,21 +350,30 @@ export function DiscoveryTaskManagement() {
               { value: "disabled", label: t("已禁用", "Disabled") },
             ]}
           />
-          <Typography.Text type="secondary">
-            {t(
-              "通过上下箭头调整展示顺序，立即保存。",
-              "Use the arrows to reorder tasks. Changes are saved immediately.",
-            )}
-          </Typography.Text>
-        </div>
-        {filteredOrder && (
-          <Alert
-            className="admin-notice"
-            type="info"
-            showIcon
-            title={t("清除筛选后可调整全局顺序", "Clear filters to reorder")}
-          />
-        )}
+          {filteredOrder && (
+            <Button
+              onClick={() => {
+                setQuery("");
+                setStatus("all");
+              }}
+            >
+              {t("清除筛选", "Clear filters")}
+            </Button>
+          )}
+          {(catalog?.tasks.length ?? 0) > 1 && (
+            <Typography.Text type="secondary">
+              {filteredOrder
+                ? t(
+                    "清除筛选后可调整顺序。",
+                    "Clear the filters to reorder tasks.",
+                  )
+                : t(
+                    "调整顺序后自动保存。",
+                    "Order changes are saved automatically.",
+                  )}
+            </Typography.Text>
+          )}
+        </search>
         <Table<Task>
           rowKey="name"
           className="discovery-task-table"
@@ -371,7 +382,15 @@ export function DiscoveryTaskManagement() {
           pagination={false}
           scroll={{ x: 760 }}
           locale={{
-            emptyText: <Empty description={t("暂无任务", "No tasks")} />,
+            emptyText: catalog && (
+              <Empty
+                description={
+                  catalog.tasks.length
+                    ? t("没有符合筛选条件的任务", "No matching tasks")
+                    : t("还没有样例任务", "No sample tasks yet")
+                }
+              />
+            ),
           }}
           onRow={(task) =>
             ({
@@ -446,7 +465,7 @@ export function DiscoveryTaskManagement() {
                 const index =
                   catalog?.tasks.findIndex((t) => t.name === task.name) || 0;
                 return (
-                  <Space size={4}>
+                  <Flex gap={4}>
                     <Tooltip title={t("上移", "Move up")}>
                       <Button
                         aria-label={`${t("上移", "Move up")} ${task.name}`}
@@ -468,7 +487,7 @@ export function DiscoveryTaskManagement() {
                         onClick={() => move(task, 1)}
                       />
                     </Tooltip>
-                  </Space>
+                  </Flex>
                 );
               },
             },
@@ -490,20 +509,18 @@ export function DiscoveryTaskManagement() {
         forceRender
         extra={dirty && <Tag color="orange">{t("未保存", "Unsaved")}</Tag>}
         footer={
-          <Space style={{ width: "100%", justifyContent: "space-between" }}>
-            <span>
-              {!creating && (
-                <Button
-                  danger
-                  icon={<DeleteOutlined aria-hidden />}
-                  disabled={busy}
-                  onClick={remove}
-                >
-                  {t("删除任务", "Delete task")}
-                </Button>
-              )}
-            </span>
-            <Space>
+          <Flex gap="small" justify={creating ? "flex-end" : "space-between"}>
+            {!creating && (
+              <Button
+                danger
+                icon={<DeleteOutlined aria-hidden />}
+                disabled={busy}
+                onClick={remove}
+              >
+                {t("删除任务", "Delete task")}
+              </Button>
+            )}
+            <Flex gap="small" align="center">
               <Button
                 disabled={busy}
                 onClick={() =>
@@ -523,8 +540,8 @@ export function DiscoveryTaskManagement() {
               >
                 {t("保存任务", "Save task")}
               </Button>
-            </Space>
-          </Space>
+            </Flex>
+          </Flex>
         }
       >
         {notice && "error" in notice && (
@@ -540,6 +557,7 @@ export function DiscoveryTaskManagement() {
           />
         )}
         <Form
+          name="sample-task"
           form={form}
           layout="vertical"
           disabled={busy}
@@ -554,6 +572,7 @@ export function DiscoveryTaskManagement() {
           }}
         >
           <Tabs
+            id="sample-task-fields"
             activeKey={activeTab}
             onChange={setActiveTab}
             items={[
@@ -562,83 +581,65 @@ export function DiscoveryTaskManagement() {
                 label: group.label,
                 forceRender: true,
                 children: (
-                  <>
-                    {group.key === "prompts" && (
-                      <Alert
-                        className="admin-form-note"
-                        type="info"
-                        title={
-                          <>
-                            {t("数据准备提示词可使用", "Use")}{" "}
-                            <code>{"{inputs}"}</code>{" "}
-                            {t(
-                              "插入文件名；其他花括号会原样保留。",
-                              "to insert filenames into the preparation prompt. Other braces are kept as written.",
-                            )}
-                          </>
+                  <div
+                    className={
+                      group.key === "basic" ? "admin-fields" : undefined
+                    }
+                  >
+                    {group.fields.map(([key, label]) => (
+                      <Form.Item
+                        key={key}
+                        name={key}
+                        label={label}
+                        className={wide.has(key) ? "wide" : undefined}
+                        extra={
+                          key === "preparation"
+                            ? t(
+                                "用 {inputs} 插入数据文件或目录名。",
+                                "Use {inputs} for data file or folder names.",
+                              )
+                            : key === "summary_zh" || key === "summary_en"
+                              ? t(
+                                  "在任务卡片中显示，支持 Markdown 和 LaTeX。",
+                                  "Shown on the task card. Supports Markdown and LaTeX.",
+                                )
+                              : undefined
                         }
-                      />
-                    )}
-                    {group.key === "descriptions" && (
-                      <Alert
-                        className="admin-form-note"
-                        type="info"
-                        title={t(
-                          "公式摘要支持 Markdown 和 LaTeX，仅用于样例卡片展示。",
-                          "Formula summaries support Markdown and LaTeX and appear on the sample cards.",
+                        rules={[
+                          {
+                            required: required.has(key),
+                            message: <LiveText zh="请填写此项" en="Required" />,
+                          },
+                          ...(key === "name"
+                            ? [
+                                {
+                                  pattern: /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,
+                                  message: (
+                                    <LiveText
+                                      zh="以英文字母或数字开头，后续也可使用下划线和短横线。"
+                                      en="Start with a letter or digit. Underscores and hyphens are allowed after it."
+                                    />
+                                  ),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      >
+                        {group.key === "basic" ? (
+                          <Input
+                            aria-label={label}
+                            disabled={key === "name" && !creating}
+                            maxLength={key === "name" ? 128 : undefined}
+                          />
+                        ) : (
+                          <Input.TextArea
+                            aria-label={label}
+                            autoSize={{ minRows: 4, maxRows: 12 }}
+                          />
                         )}
-                      />
-                    )}
-                    <div
-                      className={
-                        group.key === "basic" ? "admin-fields" : undefined
-                      }
-                    >
-                      {group.fields.map(([key, label]) => (
-                        <Form.Item
-                          key={key}
-                          name={key}
-                          label={label}
-                          className={wide.has(key) ? "wide" : undefined}
-                          rules={[
-                            {
-                              required: required.has(key),
-                              message: (
-                                <LiveText zh="请填写此项" en="Required" />
-                              ),
-                            },
-                            ...(key === "name"
-                              ? [
-                                  {
-                                    pattern:
-                                      /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,
-                                    message: (
-                                      <LiveText
-                                        zh="使用字母、数字、下划线或短横线"
-                                        en="Use letters, digits, underscores or hyphens."
-                                      />
-                                    ),
-                                  },
-                                ]
-                              : []),
-                          ]}
-                        >
-                          {group.key === "basic" ? (
-                            <Input
-                              aria-label={label}
-                              disabled={key === "name" && !creating}
-                              maxLength={key === "name" ? 128 : undefined}
-                            />
-                          ) : (
-                            <Input.TextArea
-                              aria-label={label}
-                              autoSize={{ minRows: 4, maxRows: 12 }}
-                            />
-                          )}
-                        </Form.Item>
-                      ))}
-                    </div>
-                  </>
+                      </Form.Item>
+                    ))}
+                  </div>
                 ),
               })),
               {
@@ -647,22 +648,13 @@ export function DiscoveryTaskManagement() {
                 forceRender: true,
                 children: (
                   <>
-                    <Alert
-                      className="admin-form-note"
-                      type="info"
-                      showIcon
-                      title={t(
-                        "共享数据以只读方式关联到会话",
-                        "Shared data is attached to sessions as read-only",
-                      )}
-                      description={t(
-                        "填写 Harness 中的文件或目录，每行一个。位置必须位于 ASTRAL_SAMPLE_DATA_ROOT 内；未设置时使用 ASTRAL_PROJECT_ROOT/data。启用前需要可读的非空数据。",
-                        "Enter one Harness file or directory per line. Paths must be under ASTRAL_SAMPLE_DATA_ROOT, which defaults to ASTRAL_PROJECT_ROOT/data. Enabling the task requires readable, nonempty data.",
-                      )}
-                    />
                     <Form.Item
                       name="data_locations"
                       label={t("数据位置", "Data locations")}
+                      extra={t(
+                        "每行一个文件或目录，供会话只读访问。路径须位于 ASTRAL_SAMPLE_DATA_ROOT 下，默认根目录为 ASTRAL_PROJECT_ROOT/data。",
+                        "Enter one file or directory per line. Sessions have read-only access. Paths must be under ASTRAL_SAMPLE_DATA_ROOT (default: ASTRAL_PROJECT_ROOT/data).",
+                      )}
                     >
                       <Input.TextArea
                         aria-label={t("数据位置", "Data locations")}
@@ -674,8 +666,8 @@ export function DiscoveryTaskManagement() {
                       name="files"
                       label={t("参考文件名", "Reference file names")}
                       extra={t(
-                        "每行一个，仅作说明，不会自动挂载。",
-                        "Enter one name per line for reference. These files are not mounted automatically.",
+                        "每行一个。实际加载的文件由「数据位置」决定。",
+                        "Enter one name per line. Data locations determine which files are loaded.",
                       )}
                     >
                       <Input.TextArea
@@ -683,7 +675,14 @@ export function DiscoveryTaskManagement() {
                         autoSize={{ minRows: 2, maxRows: 6 }}
                       />
                     </Form.Item>
-                    <Form.Item name="enabled" valuePropName="checked">
+                    <Form.Item
+                      name="enabled"
+                      valuePropName="checked"
+                      extra={t(
+                        "启用前，每个数据位置都须可读且非空。",
+                        "Each data location must be readable and nonempty before enabling the task.",
+                      )}
+                    >
                       <Checkbox aria-label={t("启用此任务", "Enabled")}>
                         {t("启用此任务", "Enabled")}
                       </Checkbox>
@@ -695,6 +694,6 @@ export function DiscoveryTaskManagement() {
           />
         </Form>
       </Drawer>
-    </main>
+    </section>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Avatar, Button, ConfigProvider, Dropdown, theme } from "antd";
+import { ConfigProvider, Dropdown, theme } from "antd";
 import { DownOutlined, LogoutOutlined } from "@ant-design/icons";
 import { api } from "@/lib/client";
 
@@ -9,9 +9,11 @@ import { localizedError, useUiLanguage } from "./ui-language";
 
 export function UserAccountMenu({
   username,
+  id,
   workbench = false,
 }: {
   username: string;
+  id?: string;
   workbench?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -85,31 +87,18 @@ export function UserAccountMenu({
         },
       }}
     >
-      {workbench ? (
-        <button
-          type="button"
-          className="header-toggle user-account-trigger"
-          aria-label={label}
-          title={username}
-          aria-haspopup="menu"
-          aria-expanded={open}
-        >
-          <span className="user-account-name">{username}</span>
-          <DownOutlined aria-hidden />
-        </button>
-      ) : (
-        <Button
-          className="user-account-trigger"
-          aria-label={label}
-          title={username}
-          aria-haspopup="menu"
-          aria-expanded={open}
-        >
-          <Avatar size="small">{username[0]?.toUpperCase()}</Avatar>
-          <span className="user-account-name">{username}</span>
-          <DownOutlined aria-hidden />
-        </Button>
-      )}
+      <button
+        id={id}
+        type="button"
+        className="header-toggle user-account-trigger"
+        aria-label={label}
+        title={username}
+        aria-haspopup="menu"
+        aria-expanded={open}
+      >
+        <span className="user-account-name">{username}</span>
+        <DownOutlined aria-hidden />
+      </button>
     </Dropdown>
   );
   return workbench ? (

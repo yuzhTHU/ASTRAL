@@ -35,9 +35,29 @@ test("Ant Design administration manages accounts, registration and shared models
   page.on("pageerror", (e) => errors.push(e.message));
   await page.goto("/");
   await expect(page.locator("html")).toHaveClass(/ui-ready/);
+  const workbenchLogo = await page
+    .locator("header .brand img")
+    .getAttribute("src");
   await page.locator("#account-settings").click();
   await expect(page).toHaveURL("http://localhost:3100/admin");
   await expect(page.getByRole("heading", { name: "账号与注册" })).toBeVisible();
+  const header = page.getByRole("banner");
+  await expect(header.locator("#admin-home-link img")).toHaveAttribute(
+    "src",
+    workbenchLogo!,
+  );
+  await expect(page.getByRole("main")).toHaveCount(1);
+  const nav = page.getByRole("navigation", { name: "管理导航" });
+  await expect(nav.getByRole("link")).toHaveCount(4);
+  await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute(
+    "href",
+    "/admin",
+  );
+  await header.getByRole("button", { name: "Switch to English" }).click();
+  await expect(
+    header.getByRole("link", { name: "Back to workbench" }),
+  ).toHaveAttribute("href", "/");
+  await header.getByRole("button", { name: "切换到中文" }).click();
   await page.getByRole("button", { name: "创建用户" }).click();
   const ordinaryName = `console-user-${stamp}`;
   await page.getByLabel("新建用户名").fill(ordinaryName);
@@ -77,20 +97,32 @@ test("Ant Design administration manages accounts, registration and shared models
   ).toBeTruthy();
   await row.getByRole("button", { name: "禁用", exact: true }).click();
   await language.click();
-  await expect(page.getByRole("dialog")).toContainText("Disable account?");
+  await expect(page.getByRole("dialog")).toContainText(
+    `Disable account “${ordinaryName}”?`,
+  );
   await expect(
-    page.getByRole("button", { name: "Confirm", exact: true }),
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Disable account", exact: true }),
   ).toBeVisible();
   await language.click();
-  await expect(page.getByRole("dialog")).toContainText("禁用此账号？");
+  await expect(page.getByRole("dialog")).toContainText(
+    `禁用账号“${ordinaryName}”？`,
+  );
   await workbench.close();
-  await page.getByRole("button", { name: "确认", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "禁用账号", exact: true })
+    .click();
   await expect(row).toContainText("已禁用");
   expect((await ordinary.request.get(origin + "/api/auth/me")).status()).toBe(
     401,
   );
   await row.getByRole("button", { name: "启用", exact: true }).click();
-  await page.getByRole("button", { name: "确认", exact: true }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "启用账号", exact: true })
+    .click();
   await expect(row).toContainText("正常");
   await row.getByRole("button", { name: "重置密码" }).click();
   const nextPassword = "new-console-password-123456";
@@ -181,6 +213,16 @@ test("Ant Design administration manages accounts, registration and shared models
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/admin/discovery-tasks");
   await expect(page.getByRole("heading", { name: "样例任务" })).toBeVisible();
+  await expect(nav.locator('a[aria-current="page"]')).toHaveAttribute(
+    "href",
+    "/admin/discovery-tasks",
+  );
+  await expect(
+    header.getByRole("button", { name: "Switch to English" }),
+  ).toBeInViewport();
+  await expect(
+    header.getByRole("link", { name: "返回工作台" }),
+  ).toBeInViewport();
   await page.screenshot({
     path: info.outputPath("admin-mobile.png"),
     fullPage: true,
