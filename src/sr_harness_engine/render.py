@@ -43,7 +43,9 @@ def render(
         The rendered expression.
     """
     if isinstance(expression, Number):
-        return format(expression.value, number_format) if number_format else repr(expression.value)
+        text = format(expression.value, number_format) if number_format else repr(expression.value)
+        # A negative literal as the base of ``**`` needs parentheses: -2 ** 2 means -(2 ** 2).
+        return f"({text})" if text.startswith("-") and parent_precedence > 40 else text
     if isinstance(expression, Symbol):
         return expression.name
     if isinstance(expression, Parameter):
@@ -68,7 +70,10 @@ def render(
         return f"({text})" if parent_precedence > 40 else text
     if isinstance(expression, Binary):
         precedence = PRECEDENCE[expression.operator]
-        left = render(expression.left, precedence, latex=latex, number_format=number_format)
+        # ``**`` is right-associative and binds tighter than unary minus on its left, so its
+        # base must be parenthesised for any binary or unary operand: (a ** b) ** c, (-a) ** b.
+        left_precedence = 41 if expression.operator == "**" else precedence
+        left = render(expression.left, left_precedence, latex=latex, number_format=number_format)
         right_precedence = precedence + (0 if expression.operator == "**" else 1)
         right_text = render(
             expression.right,
