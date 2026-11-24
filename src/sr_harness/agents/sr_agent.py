@@ -46,6 +46,8 @@ class SRAgent(Agent):
         "power_law_fit",
         "rational_fit",
         "constant_fit",
+        "simplify_formula",
+        "fit_distribution_families",
         "read_skill",
         "create_skill",
         "edit_skill",

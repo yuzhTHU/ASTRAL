@@ -12,6 +12,8 @@ from .harmonic_interaction_fit import HarmonicInteractionFitTool
 from .power_law_fit import PowerLawFitTool
 from .rational_fit import RationalFitTool
 from .constant_fit import ConstantFitTool
+from .simplify_formula import SimplifyFormulaTool
+from .fit_distribution_families import FitDistributionFamiliesTool
 from .code_executor import CodeExecutorTool
 from .workspace_code_executor import WorkspaceCodeExecutorTool
 from .read_skill import ReadSkill
@@ -40,7 +42,7 @@ from .evaluate_observational_formula import EvaluateObservationalFormulaTool, Su
 from .observational_statistics import ObservationalStatisticsTool
 
 __all__ = [
-    "BaseTool", "CodeExecutorTool", "ConstantFitTool",
+    "BaseTool", "CodeExecutorTool", "ConstantFitTool", "SimplifyFormulaTool", "FitDistributionFamiliesTool",
     "CreateSkill", "EditSkill", "EditTool", "EICTool", "EvaluateCodeTool",
     "EvaluateTool", "FinishSearchTool", "HarmonicInteractionFitTool", "LLMTool", "ModelTestTool",
     "ND2Tool", "PDFReadTool", "PolynomialFitTool", "PowerLawFitTool",
