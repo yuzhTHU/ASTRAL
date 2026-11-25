@@ -109,8 +109,28 @@ class DiscoveryTaskStore:
             if payload["version"] <= value["migration_version"]:
                 continue
             value["tasks"].extend(
-                DiscoveryTask.model_validate(t).model_dump() for t in payload["tasks"]
+                DiscoveryTask.model_validate(t).model_dump() for t in payload.get("tasks", [])
             )
+            updates = payload.get("updates", {})
+            revised_tasks = []
+            for i, task in enumerate(value["tasks"]):
+                # Update only fields that still contain the old seed value.
+                changes = {
+                    field: edit["to"]
+                    for field, edit in updates.get(task["name"], {}).items()
+                    if task[field] == edit["from"]
+                }
+                if changes:
+                    updated = DiscoveryTask.model_validate({**task, **changes}).model_dump()
+                    value["tasks"][i] = updated
+                    revised_tasks.append(updated)
+            # New catalogs start at revision zero. Existing catalogs need a new
+            # revision for optimistic writes and for sessions loading the updated prompts.
+            if revised_tasks and self.value["migration_version"] > 0:
+                value["revision"] += 1
+                for task in revised_tasks:
+                    versions = value["history"].setdefault(task["name"], {})
+                    versions[str(value["revision"])] = task
             value["migration_version"] = payload["version"]
         if value != self.value or not self.path.exists():
             self._commit(value)

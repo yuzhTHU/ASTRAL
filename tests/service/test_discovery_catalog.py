@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -9,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from sr_harness.http.app import create_app
 from sr_harness.service import HttpHarnessService, LocalHarnessService, ServiceError
-from sr_harness.service.discovery import list_cases
+from sr_harness.service import discovery_catalog
+from sr_harness.service.discovery import list_cases, prompts
 from sr_harness.service.discovery_catalog import DiscoveryTaskStore, source_paths
 
 TOKEN = "discovery-catalog-internal-token-12345678"
@@ -38,6 +40,7 @@ def configured(service, source):
 def test_migration_seeds_disabled_tasks_once_and_preserves_edits(setup):
     service, source = setup
     catalog = service.discovery_catalog()
+    assert catalog["revision"] == 0
     assert len(catalog["tasks"]) == 7
     assert all(t["enabled"] is False and t["data_locations"] == [] for t in catalog["tasks"])
     assert all(t["citation"] and t["summary_zh"] and t["preparation"] for t in catalog["tasks"])
@@ -49,8 +52,48 @@ def test_migration_seeds_disabled_tasks_once_and_preserves_edits(setup):
     restored = DiscoveryTaskStore(service.root / "discovery-tasks.json")
     assert len(restored.catalog()["tasks"]) == 6
     assert restored.catalog()["tasks"][0]["title"] == "An edited study"
-    assert restored.value["migration_version"] == 1
+    assert restored.value["migration_version"] == 2
     assert all(t["name"] != catalog["tasks"][1]["name"] for t in restored.catalog()["tasks"])
+
+
+def test_research_prompts_in_fresh_catalog(setup):
+    service, sample = setup
+    tasks = {t["name"]: t for t in service.discovery_catalog()["tasks"]}
+    chen = prompts(tasks["Chen_NatureAstronomy2023"], [sample], "test")
+    assert all(term in chen["data_agent"] for term in (sample.name, "SDSS", "LAMOST", "独立检验"))
+    assert all(term in chen["evaluator_agent"] for term in ("误差", "固有弥散", "30%"))
+    xiang = tasks["Xiang_Nature2022"]
+    assert "厚盘序列" in xiang["preparation"] and "离群" in xiang["evaluation"]
+    li = tasks["Li_Nature2021"]
+    assert "6 小时" in li["preparation"] and "70%" in li["evaluation"]
+    chiang = tasks["Chiang_NatureAstronomy2026"]
+    assert "逐个留一" in chiang["evaluation"]
+    assert chiang["files"] == ["rho_CO_CII--8_z_bins.ecsv", "rho_CO_CII--dense_z_fiducial.ecsv"]
+
+
+def test_upgrading_seed_prompts_preserves_custom_fields_deletions_and_history(tmp_path):
+    seed = Path(discovery_catalog.__file__).with_name("migrations") / "0001_discovery_tasks.json"
+    tasks = json.loads(seed.read_text(encoding="utf8"))["tasks"]
+    chen = tasks[0]
+    chen.update(preparation="Custom preparation", enabled=True, data_locations=["custom.csv"])
+    deleted = tasks.pop(1)["name"]
+    old = deepcopy(chen)
+    previous = {
+        "schema_version": 1, "migration_version": 1, "revision": 8, "tasks": tasks,
+        "history": {chen["name"]: {"7": old}, deleted: {}},
+    }
+    path = tmp_path / "discovery-tasks.json"
+    path.write_text(json.dumps(previous), encoding="utf8")
+    upgraded = DiscoveryTaskStore(path)
+    current, revision = upgraded.selected(chen["name"])
+    assert revision == upgraded.catalog()["revision"] == 9
+    assert current == {**old, "evaluation": current["evaluation"]}
+    assert "30%" in current["evaluation"] and current["evaluation"] != old["evaluation"]
+    assert upgraded.selected(chen["name"], 7) == (old, 7)
+    assert upgraded.selected(chen["name"], 9) == (current, 9)
+    assert [t["name"] for t in upgraded.catalog()["tasks"]] == [t["name"] for t in tasks]
+    assert upgraded.value["history"][deleted] == {}
+    assert DiscoveryTaskStore(path).value == upgraded.value
 
 
 def test_crud_order_conflicts_validation_and_public_filtering(setup):

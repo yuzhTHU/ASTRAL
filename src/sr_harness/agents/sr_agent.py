@@ -47,6 +47,8 @@ class SRAgent(Agent):
         "power_law_fit",
         "rational_fit",
         "constant_fit",
+        "simplify_formula",
+        "fit_distribution_families",
         "read_skill",
         "create_skill",
         "edit_skill",
@@ -555,9 +557,18 @@ class SRAgent(Agent):
         return self.customize_initial_prompts(messages, X=X, y=y)
 
     @staticmethod
-    def _build_mse_goal(restart_records) -> str:
-        """Describe the next MSE objective from the current restart seeds."""
-        return (
+    def _build_mse_goal(restart_records, ranking_metric: str | None = None) -> str:
+        """Describe the next MSE objective from the current restart seeds.
+
+        Args:
+            restart_records: Historical candidates from prior restarts.
+            ranking_metric: Session ranking metric. When it is a training-likelihood information
+                criterion (its name contains ``bic``), selection follows it instead of validation.
+
+        Returns:
+            str: Objective text for the system prompt.
+        """
+        goal = (
             "Seek a compact expression with reliable held-out predictive performance. "
             "Establish constant and simple linear baselines before increasing complexity. "
             "Fit coefficients and preprocessing on training data only; use validation for "
@@ -568,6 +579,16 @@ class SRAgent(Agent):
             "distinguish them. Exact recovery is warranted only by independent evidence "
             "that the data are effectively noiseless."
         )
+        if ranking_metric and "bic" in ranking_metric.lower():
+            goal += (
+                f" Candidates are ranked by {ranking_metric}, an information criterion on the training "
+                "likelihood that already charges for every fitted parameter: select by it and submit the "
+                "candidate it ranks first as your first submission, treating differences below 2 as ties "
+                "won by the candidate with fewer parameters. Use validation scores only to reject "
+                "clear overfitting, not to drop a term the criterion supports because a small validation "
+                "split cannot resolve it."
+            )
+        return goal
 
     def create_initial_system_prompt(self, restart_records: list[CandidateRecord]) -> str:
         """Render the system prompt defining the agent's role, workflow, and tool instructions.
@@ -578,7 +599,7 @@ class SRAgent(Agent):
         Returns:
             str: Formatted system prompt text.
         """
-        mse_goal = self._build_mse_goal(restart_records)
+        mse_goal = self._build_mse_goal(restart_records, getattr(self, "ranking_metric", None))
         return collaborative_workflow_prompt("regression") + (
             "You are a Symbolic Regression Agent. Your goal is to discover mathematical formulas "
             "that explain the relationship between feature variables and the target variable. "

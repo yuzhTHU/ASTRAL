@@ -763,7 +763,7 @@ class SRAgentInteractive(SRAgent):
         Returns:
             str: System prompt tailored for interactive symbolic regression.
         """
-        mse_goal = self._build_mse_goal(restart_records)
+        mse_goal = self._build_mse_goal(restart_records, getattr(self, "ranking_metric", None))
         return collaborative_workflow_prompt("regression") + (
             "You are a Symbolic Regression Agent working with a human researcher. "
             "Your goal is to discover simple, interpretable mathematical formulas that explain "
